@@ -67,7 +67,7 @@
    - Remove BF16 fallback guards in TELinear, LayerNormLinear, LayerNormMLP, SSM/Hyena wrappers once capability probe succeeds.
    - Update distributed collectives (`pytorch/distributed.py`) so all-gather / reduce-scatter paths understand MXFP8 layouts and call the NVFP4 post-processing utilities.
 
-2. **JAX quantisation stack**
+2. **JAX quantisation stack** *(optional – to be handled separately)*
    - Teach `scaling_modes.py`, `quantizer.py`, and GEMM wrappers about the new block-size metadata and capability signals.
    - Ensure the FFI bridging in `jax/csrc/extensions/gemm.cpp` requests the right descriptors and that the Python recipe constructors expose MXFP8BlockScaling/NVFP4BlockScaling on SM120.
 
