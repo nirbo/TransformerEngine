@@ -40,6 +40,8 @@ cudaDataType_t get_cuda_dtype(const transformer_engine::DType t) {
     case DType::kFloat8E5M2:
       return CUDA_R_8F_E5M2;
 #if CUDA_VERSION >= 12080
+    case DType::kFloat8E8M0:
+      return CUDA_R_8F_UE8M0;
     case DType::kFloat4E2M1:
       return CUDA_R_4F_E2M1;
 #endif
@@ -150,7 +152,12 @@ CUtensorMapDataType get_CUtensorMapDataType(DType dtype) {
         {DType::kFloat16, CUtensorMapDataType::CU_TENSOR_MAP_DATA_TYPE_FLOAT16},
         {DType::kBFloat16, CUtensorMapDataType::CU_TENSOR_MAP_DATA_TYPE_BFLOAT16},
         {DType::kFloat8E4M3, CUtensorMapDataType::CU_TENSOR_MAP_DATA_TYPE_UINT8},
-        {DType::kFloat8E5M2, CUtensorMapDataType::CU_TENSOR_MAP_DATA_TYPE_UINT8}};
+        {DType::kFloat8E5M2, CUtensorMapDataType::CU_TENSOR_MAP_DATA_TYPE_UINT8}
+#if CUDA_VERSION >= 12080
+        ,
+        {DType::kFloat8E8M0, CUtensorMapDataType::CU_TENSOR_MAP_DATA_TYPE_UINT8}
+#endif
+    };
 #if FP4_TYPE_SUPPORTED
     typeMapping.insert(
         {DType::kFloat4E2M1, CUtensorMapDataType::CU_TENSOR_MAP_DATA_TYPE_16U4_ALIGN8B});
