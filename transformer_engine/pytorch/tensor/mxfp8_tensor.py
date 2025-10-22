@@ -103,7 +103,7 @@ class MXFP8Quantizer(Quantizer):
             shape[-1] % self.block_size == 0 and math.prod(shape[:-1]) % self.block_size == 0
         ), (
             f"Incorrect shape {shape} for MXFP8. Tensor dims must be divisible by"
-            f" {MXFP8_BLOCK_SCALING_SIZE}"
+            f" {self.block_size}"
         )
 
         # Allocate FP8 data

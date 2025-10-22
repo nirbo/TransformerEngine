@@ -275,13 +275,13 @@ class NVFP4Quantizer(Quantizer):
 
         assert shape[-1] % self.block_size == 0, (
             f"Incorrect shape {shape} for NVFP4. Tensor dims must be divisible by"
-            f" {NVFP4_BLOCK_SCALING_SIZE}"
+            f" {self.block_size}"
         )
 
         flat_first_dim = math.prod(shape[:-1])
         assert flat_first_dim % self.block_size == 0, (
             f"Incorrect shape {shape} for NVFP4. Tensor dims must be divisible by"
-            f" {NVFP4_BLOCK_SCALING_SIZE}"
+            f" {self.block_size}"
         )
 
         # Allocate FP4 data

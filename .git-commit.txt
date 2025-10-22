@@ -1,5 +1,6 @@
 Changes:
-- Added validation so MXFP8/NVFP4 quantization rejects unsupported block sizes while still recording the configured value.
+- Switched MXFP8/NVFP4 quantizer shape checks and tensor factories to reference the per-instance block size rather than hard-coded constants.
+- Keeps default values at 32/16 but allows quantizers to carry alternative tilings in the future.
 
 Testing:
 - Not run.
