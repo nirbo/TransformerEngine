@@ -922,6 +922,13 @@ void nvte_cublas_gemm_v2(int transa, int transb, const float *alpha, const NVTET
         get_buffer_size_bytes(workspace_tensor->data.numel(), workspace_tensor->data.dtype);
   }
 
+  const bool nvfp4_inputs =
+      is_nvfp_scaling(A_tensor->scaling_mode) || is_nvfp_scaling(B_tensor->scaling_mode);
+  if (nvfp4_inputs) {
+    NVTE_CHECK(workspace_ptr != nullptr && workspace_size >= 8,
+               "nvte_cublas_gemm_v2 with NVFP4 inputs requires workspace >= 8 bytes on device.");
+  }
+
   // Additional config
   MatmulConfig config_;
   if (config != nullptr) {
