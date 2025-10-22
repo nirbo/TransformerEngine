@@ -8,15 +8,15 @@
 
 ## 1. Runtime Capability Detection
 1. **C++ backend (`transformer_engine/common/transformer_engine.cpp`)**
-   - Replace the hard-coded arithmetic in `nvte_is_non_tn_fp8_gemm_supported()` with a probe that:
+   - ✅ Replace the hard-coded arithmetic in `nvte_is_non_tn_fp8_gemm_supported()` with a probe that:
      - Queries current device SM (via `cuda::sm_arch`).
      - Checks runtime cuBLASLt version (`cublasLtGetVersion`) and CUDA runtime version.
      - Returns true for SM ≥ 100 when cuBLASLt supports MXFP8 all-layout GEMM (≥12.8), including SM120.
-   - Introduce `nvte_is_nvfp4_supported()` (or equivalent) that mirrors the logic for NVFP4 block GEMM availability.
-   - Export new probes through the C API header and bindings (PyTorch & JAX pybind modules).
+   - ✅ Introduce `nvte_is_nvfp4_supported()` (or equivalent) that mirrors the logic for NVFP4 block GEMM availability.
+   - ✅ Export new probes through the C API header and bindings (PyTorch & JAX pybind modules).
 
 2. **PyTorch front-end (`transformer_engine/pytorch/quantization.py`, `pytorch/csrc/quantizer.cpp`)**
-   - Update `check_mxfp8_support()` and `check_nvfp4_support()` to rely on the new C++ probes instead of open-coded CC checks; include CUDA runtime / cuBLASLt version assertions and clear error messages.
+   - ✅ Update `check_mxfp8_support()` and `check_nvfp4_support()` to rely on the new C++ probes instead of open-coded CC checks; include CUDA runtime / cuBLASLt version assertions and clear error messages.
    - Ensure `QuantizationManager` stops forcing BF16 fallback when the probes succeed.
    - Adjust `Float8Quantizer::create_tensor` logic so SM120 keeps row & column buffers consistent with true all-layout GEMM support.
 
