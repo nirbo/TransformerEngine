@@ -924,9 +924,32 @@ void nvte_cublas_gemm_v2(int transa, int transb, const float *alpha, const NVTET
 
   const bool nvfp4_inputs =
       is_nvfp_scaling(A_tensor->scaling_mode) || is_nvfp_scaling(B_tensor->scaling_mode);
+  float *alpha_ptr = const_cast<float *>(alpha);
+  float *beta_ptr = const_cast<float *>(beta);
+  float updated_alpha = 0.0f;
+  float updated_beta = 0.0f;
   if (nvfp4_inputs) {
-    NVTE_CHECK(workspace_ptr != nullptr && workspace_size >= 8,
+    NVTE_CHECK(workspace_ptr != nullptr && workspace_size >= sizeof(float) * 2,
                "nvte_cublas_gemm_v2 with NVFP4 inputs requires workspace >= 8 bytes on device.");
+    const bool transa_bool = transa != 0;
+    const bool transb_bool = transb != 0;
+    updated_alpha = *alpha_ptr;
+    TensorWrapper alpha_tensor(&updated_alpha, std::vector<size_t>{1}, DType::kFloat32);
+    nvte_nvfp4_compute_per_tensor_scale(A, transa_bool, B, !transb_bool, *alpha_ptr,
+                                        alpha_tensor.data(), stream);
+    alpha_ptr = &updated_alpha;
+    updated_beta = *beta_ptr;
+    beta_ptr = &updated_beta;
+  }
+  if (nvfp4_inputs) {
+    uint8_t *workspace_bytes = reinterpret_cast<uint8_t *>(workspace_ptr);
+    float *scalar_storage =
+        reinterpret_cast<float *>(workspace_bytes + workspace_size - sizeof(float) * 2);
+    scalar_storage[0] = *alpha_ptr;
+    scalar_storage[1] = *beta_ptr;
+    alpha_ptr = &scalar_storage[0];
+    beta_ptr = &scalar_storage[1];
+    workspace_size -= sizeof(float) * 2;
   }
 
   // Additional config
@@ -962,7 +985,7 @@ void nvte_cublas_gemm_v2(int transa, int transb, const float *alpha, const NVTET
   // Launch GEMM
   cublas_gemm(A_tensor, B_tensor, D_tensor, epilogue_bias_tensor, epilogue_aux_tensor,
               transa ? CUBLAS_OP_T : CUBLAS_OP_N, transb ? CUBLAS_OP_T : CUBLAS_OP_N,
-              with_grad_epilogue, workspace_ptr, workspace_size, alpha, beta,
+              with_grad_epilogue, workspace_ptr, workspace_size, alpha_ptr, beta_ptr,
               config_.use_split_accumulator, config_.sm_count, 0, 0, false, nullptr, stream);
 }
 
