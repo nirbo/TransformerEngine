@@ -700,16 +700,18 @@ void multi_tensor_swizzle_scaling_factors(const std::vector<Tensor*>& input,
       kernel_args.m_list[pos] = m;
       kernel_args.k_list[pos] = k;
       if (!all_nvfp4 || all_has_data) {
-        int block_scale_size = all_nvfp4 ? NVFP4_BLOCK_SIZE : MXFP8_BLOCK_SIZE;
+        const int block_scale_size =
+            all_nvfp4 ? infer_nvfp4_block_size(input[i], /*columnwise=*/false) : MXFP8_BLOCK_SIZE;
         kernel_args.input_list[pos] = const_cast<void*>(input[i]->scale_inv.dptr);
         kernel_args.output_list[pos] = output[i]->scale_inv.dptr;
         kernel_args.original_m_list[pos] = input[i]->flat_first_dim();
         kernel_args.original_k_list[pos] = input[i]->flat_last_dim() / block_scale_size;
       } else {
+        const int block_scale_size = infer_nvfp4_block_size(input[i], /*columnwise=*/true);
         kernel_args.input_list[pos] = const_cast<void*>(input[i]->columnwise_scale_inv.dptr);
         kernel_args.output_list[pos] = output[i]->columnwise_scale_inv.dptr;
         kernel_args.original_m_list[pos] = input[i]->flat_last_dim();
-        kernel_args.original_k_list[pos] = input[i]->flat_first_dim() / NVFP4_BLOCK_SIZE;
+        kernel_args.original_k_list[pos] = input[i]->flat_first_dim() / block_scale_size;
       }
       kernel_args.num_tensors++;
     }

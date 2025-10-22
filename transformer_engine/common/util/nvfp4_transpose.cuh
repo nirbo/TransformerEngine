@@ -20,6 +20,7 @@
 #endif  // CUDA_VERSION > 12080
 
 #include <cfloat>
+#include <type_traits>
 
 #include "../common.h"
 #include "../utils.cuh"
@@ -39,76 +40,73 @@ using RNG = decltype(curanddx::Generator<curanddx::philox4_32>() + curanddx::Phi
 using namespace ptx;
 using nvfp4_scale_t = fp8e4m3;
 
-constexpr size_t SCALE_DIM = 16;  // NVFP4 block (x16 elts)
+constexpr size_t kNvfp4DefaultBlockSize = 16;  // NVFP4 block (x16 elts)
 
 constexpr size_t CHUNK_DIM_Y = 128;
 constexpr size_t CHUNK_DIM_X = 128;
-constexpr size_t THREADS_NUM = 128;
-
-constexpr size_t SCALES_PER_CHUNK_Y = CHUNK_DIM_Y / SCALE_DIM;
-constexpr size_t SCALES_PER_CHUNK_X = CHUNK_DIM_X / SCALE_DIM;
-
-constexpr size_t SCALES_PER_THREAD = 2 * (CHUNK_DIM_Y * CHUNK_DIM_X) / SCALE_DIM / THREADS_NUM;
-constexpr size_t RNG_GENS_PER_THREAD =
-    SCALES_PER_THREAD / 4;  // Each call generates 4x uint32_t random numbers
-
+constexpr int THREADS_NUM = 128;
 constexpr size_t TILE_DIM_Y = 32;
 constexpr size_t TILE_DIM_X = 128;
-
-// SHould this be SCALE_DIM or BLOCK_DIM? Both are 16, should work for both 1D and 2D
-constexpr size_t SCALES_PER_TILE_Y = TILE_DIM_Y / SCALE_DIM;
-constexpr size_t SCALES_PER_TILE_X = TILE_DIM_X / SCALE_DIM;  // 128 / 16 =  8
-
-constexpr size_t TILES_Y = CHUNK_DIM_Y / TILE_DIM_Y;
-constexpr size_t TILES_X = CHUNK_DIM_X / TILE_DIM_X;
-constexpr size_t STAGES = TILES_Y * TILES_X;
-
-constexpr size_t BUFFS_NUM = 2;
-constexpr size_t BUFF_DIM_Y = TILE_DIM_Y;
-constexpr size_t BUFF_DIM_X = TILE_DIM_X;
-constexpr size_t BUFF_SIZE = BUFF_DIM_Y * BUFF_DIM_X;
-constexpr size_t BUFF_SIZE_TOTAL = BUFF_SIZE * BUFFS_NUM;
-
-// Input buffer (BF16)
-constexpr size_t BUFF_IN_DIM_Y = BUFF_DIM_Y;
-constexpr size_t BUFF_IN_DIM_X = BUFF_DIM_X;
-constexpr size_t BUFF_IN_SIZE = BUFF_IN_DIM_Y * BUFF_IN_DIM_X;
-
-// Output buffer (NVFP4)
-constexpr size_t BUFF_OUT_DIM_Y = BUFF_DIM_Y;
-constexpr size_t BUFF_OUT_DIM_X = (BUFF_DIM_X * 4) / 8;
-constexpr size_t BUFF_OUT_SIZE = BUFF_OUT_DIM_Y * BUFF_OUT_DIM_X;
-
-// Output transpose buffer (NVFP4)
-constexpr size_t BUFF_OUT_T_DIM_Y = BUFF_DIM_X;
-constexpr size_t BUFF_OUT_T_DIM_X = (BUFF_DIM_Y * 4) / 8;
-constexpr size_t BUFF_OUT_T_SIZE = BUFF_OUT_T_DIM_Y * BUFF_OUT_T_DIM_X;
-
-// Manual swizzling parameters to reduce SHMEM bank conflicts
 constexpr size_t PACK_SIZE = 8;
-constexpr size_t WAVES = SCALE_DIM / PACK_SIZE;
-
-constexpr size_t SCALING_FACTORS_PER_TILE_X = TILE_DIM_X / SCALE_DIM;
-constexpr size_t THREADS_X_ROWWISE = SCALING_FACTORS_PER_TILE_X;       // 128 / 16 = 8
-constexpr size_t THREADS_Y_ROWWISE = THREADS_NUM / THREADS_X_ROWWISE;  // 128 / 8 = 16
-
-constexpr size_t ITERATIONS_NORMAL = BUFF_DIM_Y / THREADS_Y_ROWWISE;  // 32/ 16 = 2
-constexpr size_t ITERATIONS_TRANSPOSE = BUFF_IN_DIM_Y / SCALE_DIM;
-constexpr size_t BUFF_OUT_IT_OFFSET = BUFF_OUT_T_DIM_X / ITERATIONS_TRANSPOSE;
-
-static_assert(BUFF_DIM_Y >= SCALE_DIM &&
-              "Number of buffer rows must be greater or equal to the size of the columwise "
-              "scaling block\0");
-static_assert(CHUNK_DIM_Y >= BUFF_DIM_Y);
-static_assert(BUFF_DIM_Y >= THREADS_Y_ROWWISE &&
-              "Number of buffer rows must be greater or equal to the number of rowwise "
-              "processing threads in Y dimension\0");
-
-// Number of 4-bit elements that span 32 banks (4-byte each) of shared memory
 constexpr size_t TOTAL_BANKS_WIDTH = (32 * 4 * 8) / 4;  // 256
 
-// Number of threads (rowwise scaling) that span 32 banks (4-byte banks) of shared memory
-constexpr size_t THREADS_PER_BANK = TOTAL_BANKS_WIDTH / SCALE_DIM;  // 8 = 128 / 16
+template <size_t BLOCK_SIZE>
+struct Nvfp4TransposeParams {
+  static_assert(BLOCK_SIZE > 0, "NVFP4 block size must be positive.");
+  static constexpr size_t kScaleDim = BLOCK_SIZE;
+  static constexpr size_t kChunkDimY = CHUNK_DIM_Y;
+  static constexpr size_t kChunkDimX = CHUNK_DIM_X;
+  static constexpr int kThreadsPerBlock = THREADS_NUM;
+  static_assert(kChunkDimY % kScaleDim == 0, "Chunk Y must be divisible by NVFP4 block size.");
+  static_assert(kChunkDimX % kScaleDim == 0, "Chunk X must be divisible by NVFP4 block size.");
+  static constexpr size_t kScalesPerChunkY = kChunkDimY / kScaleDim;
+  static constexpr size_t kScalesPerChunkX = kChunkDimX / kScaleDim;
+  static constexpr size_t kScalesPerThread =
+      (2 * kChunkDimY * kChunkDimX) / (kScaleDim * kThreadsPerBlock);
+  static_assert((2 * kChunkDimY * kChunkDimX) % (kScaleDim * kThreadsPerBlock) == 0,
+                "NVFP4 scaling distribution must be integral.");
+  static constexpr size_t kRngGensPerThread = kScalesPerThread / 4;
+  static constexpr size_t kTileDimY = TILE_DIM_Y;
+  static constexpr size_t kTileDimX = TILE_DIM_X;
+  static_assert(kTileDimY % kScaleDim == 0, "Tile Y must be divisible by NVFP4 block size.");
+  static constexpr size_t kScalesPerTileY = kTileDimY / kScaleDim;
+  static constexpr size_t kScalesPerTileX = kTileDimX / kScaleDim;
+  static constexpr size_t kBuffersNum = 2;
+  static constexpr size_t kBuffDimY = kTileDimY;
+  static constexpr size_t kBuffDimX = kTileDimX;
+  static constexpr size_t kBuffSize = kBuffDimY * kBuffDimX;
+  static constexpr size_t kBuffSizeTotal = kBuffSize * kBuffersNum;
+  static constexpr size_t kBuffInDimY = kBuffDimY;
+  static constexpr size_t kBuffInDimX = kBuffDimX;
+  static constexpr size_t kBuffInSize = kBuffInDimY * kBuffInDimX;
+  static constexpr size_t kBuffOutDimY = kBuffDimY;
+  static constexpr size_t kBuffOutDimX = (kBuffDimX * 4) / 8;
+  static constexpr size_t kBuffOutSize = kBuffOutDimY * kBuffOutDimX;
+  static constexpr size_t kBuffOutTDimY = kBuffDimX;
+  static constexpr size_t kBuffOutTDimX = (kBuffDimY * 4) / 8;
+  static constexpr size_t kBuffOutTSize = kBuffOutTDimY * kBuffOutTDimX;
+  static constexpr size_t kStages =
+      (kChunkDimY / kBuffDimY) * (kChunkDimX / kBuffDimX);  // Equivalent to TILES_Y * TILES_X.
+  static constexpr size_t kWaves = kScaleDim / PACK_SIZE;
+  static_assert(kScaleDim % PACK_SIZE == 0,
+                "NVFP4 block size must be divisible by PACK_SIZE to avoid bank conflicts.");
+  static constexpr size_t kThreadsXRowwise = kScalesPerTileX;
+  static constexpr size_t kThreadsYRowwise = kThreadsPerBlock / kThreadsXRowwise;
+  static_assert(kThreadsPerBlock % kThreadsXRowwise == 0,
+                "Thread block must be divisible by rowwise thread grouping.");
+  static_assert(kBuffDimY % kThreadsYRowwise == 0,
+                "Buffer rows must be divisible by rowwise thread groups.");
+  static constexpr size_t kIterationsNormal = kBuffDimY / kThreadsYRowwise;
+  static constexpr size_t kIterationsTranspose = kBuffInDimY / kScaleDim;
+  static_assert(kBuffInDimY % kScaleDim == 0,
+                "Input buffer rows must be divisible by NVFP4 block size.");
+  static constexpr size_t kBuffOutItOffset = kBuffOutTDimX / kIterationsTranspose;
+  static_assert(kBuffOutTDimX % kIterationsTranspose == 0,
+                "Transpose buffer columns must partition evenly across iterations.");
+  static constexpr size_t kThreadsPerBank = TOTAL_BANKS_WIDTH / kScaleDim;
+  static_assert(TOTAL_BANKS_WIDTH % kScaleDim == 0,
+                "Shared-memory bank mapping requires integral NVFP4 block coverage.");
+};
 
 // Compute per-block E4M3 encoding/decoding scaling factor
 __device__ __forceinline__ nvfp4_scale_t compute_decoding_scaling_factor(const float block_amax,
@@ -337,9 +335,10 @@ __device__ __forceinline__ fp4e2m1x4 mul_cvt_fp32_to_fp4_4x(const float2 in01, c
 
 #endif  // (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
 
-template <bool COMPUTE_ACTIVATIONS, typename ParamOP, float (*OP)(float, const ParamOP &),
-          typename IType, bool USE_STOCHASTIC_ROUNDING, bool RETURN_TRANSPOSE>
-__global__ void __launch_bounds__(THREADS_NUM)
+template <size_t BLOCK_SIZE, bool COMPUTE_ACTIVATIONS, typename ParamOP,
+          float (*OP)(float, const ParamOP &), typename IType, bool USE_STOCHASTIC_ROUNDING,
+          bool RETURN_TRANSPOSE>
+__global__ void __launch_bounds__(Nvfp4TransposeParams<BLOCK_SIZE>::kThreadsPerBlock)
     nvfp4_transpose_kernel(const __grid_constant__ CUtensorMap tensor_map_input,
                            const __grid_constant__ CUtensorMap tensor_map_output,
                            const __grid_constant__ CUtensorMap tensor_map_output_t,
@@ -349,6 +348,37 @@ __global__ void __launch_bounds__(THREADS_NUM)
                            const size_t cols, const size_t scale_stride,
                            const size_t scale_stride_t, const size_t *rng_state) {
 #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
+  using Params = Nvfp4TransposeParams<BLOCK_SIZE>;
+  constexpr size_t CHUNK_DIM_Y = Params::kChunkDimY;
+  constexpr size_t CHUNK_DIM_X = Params::kChunkDimX;
+  constexpr size_t SCALE_DIM = Params::kScaleDim;
+  constexpr size_t SCALES_PER_CHUNK_X = Params::kScalesPerChunkX;
+  constexpr size_t SCALES_PER_CHUNK_Y = Params::kScalesPerChunkY;
+  constexpr int THREADS_PER_BLOCK = Params::kThreadsPerBlock;
+  constexpr size_t THREADS_X_ROWWISE = Params::kThreadsXRowwise;
+  constexpr size_t THREADS_Y_ROWWISE = Params::kThreadsYRowwise;
+  constexpr size_t THREADS_PER_BANK = Params::kThreadsPerBank;
+  constexpr size_t BUFF_DIM_Y = Params::kBuffDimY;
+  constexpr size_t BUFF_DIM_X = Params::kBuffDimX;
+  constexpr size_t TILE_DIM_Y = Params::kTileDimY;
+  constexpr size_t TILE_DIM_X = Params::kTileDimX;
+  constexpr size_t TILE_DIM_Y = Params::kTileDimY;
+  constexpr size_t TILE_DIM_X = Params::kTileDimX;
+  constexpr size_t BUFF_IN_DIM_X = Params::kBuffInDimX;
+  constexpr size_t BUFF_IN_DIM_Y = Params::kBuffInDimY;
+  constexpr size_t BUFF_OUT_DIM_X = Params::kBuffOutDimX;
+  constexpr size_t BUFF_OUT_T_DIM_X = Params::kBuffOutTDimX;
+  constexpr size_t BUFF_OUT_T_DIM_Y = Params::kBuffOutTDimY;
+  constexpr size_t BUFFS_NUM = Params::kBuffersNum;
+  constexpr size_t WAVES = Params::kWaves;
+  constexpr size_t ITERATIONS_NORMAL = Params::kIterationsNormal;
+  constexpr size_t ITERATIONS_TRANSPOSE = Params::kIterationsTranspose;
+  constexpr size_t BUFF_OUT_IT_OFFSET = Params::kBuffOutItOffset;
+  constexpr size_t BUFF_IN_SIZE = Params::kBuffInSize;
+  constexpr size_t BUFF_OUT_SIZE = Params::kBuffOutSize;
+  constexpr size_t BUFF_OUT_T_SIZE = Params::kBuffOutTSize;
+  constexpr size_t STAGES = Params::kStages;
+
   constexpr bool NO_ACTIVATIONS_NOT_FP32_INPUT =
       (!COMPUTE_ACTIVATIONS) && (!std::is_same_v<IType, float>);
 
@@ -361,7 +391,7 @@ __global__ void __launch_bounds__(THREADS_NUM)
   }
 
   const size_t rng_sequence =
-      threadIdx.x + blockIdx.x * THREADS_NUM + blockIdx.y * gridDim.x * THREADS_NUM;
+      threadIdx.x + blockIdx.x * THREADS_PER_BLOCK + blockIdx.y * gridDim.x * THREADS_PER_BLOCK;
   const size_t rng_seed = rng_state != nullptr ? rng_state[0] : 0;
   const size_t rng_offset = rng_state != nullptr ? rng_state[1] : 0;
   RNG rng(rng_seed, rng_sequence, rng_offset);
@@ -469,7 +499,7 @@ __global__ void __launch_bounds__(THREADS_NUM)
 #pragma nv_diag_suppress static_var_with_dynamic_init
   __shared__ alignas(8) uint64_t mbar[STAGES];
 
-  initialize_barriers<STAGES, THREADS_NUM>(mbar, is_master_thread);
+  initialize_barriers<STAGES, THREADS_PER_BLOCK>(mbar, is_master_thread);
 
   copy_2d_to_shared(&in_sh[0], &tensor_map_input, block_offset_X, block_offset_Y, shmem_buff_size,
                     &mbar[0], is_master_thread);
@@ -849,9 +879,10 @@ __global__ void __launch_bounds__(THREADS_NUM)
 #endif  // (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
 }
 
-template <bool COMPUTE_ACTIVATIONS, typename ParamOP, float (*OP)(float, const ParamOP &),
-          typename IType, bool USE_STOCHASTIC_ROUNDING, bool RETURN_TRANSPOSE>
-__global__ void __launch_bounds__(THREADS_NUM)
+template <size_t BLOCK_SIZE, bool COMPUTE_ACTIVATIONS, typename ParamOP,
+          float (*OP)(float, const ParamOP &), typename IType, bool USE_STOCHASTIC_ROUNDING,
+          bool RETURN_TRANSPOSE>
+__global__ void __launch_bounds__(Nvfp4TransposeParams<BLOCK_SIZE>::kThreadsPerBlock)
     nvfp4_transpose_kernel_2D(const __grid_constant__ CUtensorMap tensor_map_input,
                               const __grid_constant__ CUtensorMap tensor_map_output,
                               const __grid_constant__ CUtensorMap tensor_map_output_t,
@@ -861,6 +892,32 @@ __global__ void __launch_bounds__(THREADS_NUM)
                               const size_t cols, const size_t scale_stride,
                               const size_t scale_stride_t, const size_t *rng_state) {
 #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
+  using Params = Nvfp4TransposeParams<BLOCK_SIZE>;
+  constexpr size_t CHUNK_DIM_Y = Params::kChunkDimY;
+  constexpr size_t CHUNK_DIM_X = Params::kChunkDimX;
+  constexpr size_t SCALE_DIM = Params::kScaleDim;
+  constexpr size_t SCALES_PER_CHUNK_X = Params::kScalesPerChunkX;
+  constexpr size_t SCALES_PER_CHUNK_Y = Params::kScalesPerChunkY;
+  constexpr int THREADS_PER_BLOCK = Params::kThreadsPerBlock;
+  constexpr size_t THREADS_X_ROWWISE = Params::kThreadsXRowwise;
+  constexpr size_t THREADS_Y_ROWWISE = Params::kThreadsYRowwise;
+  constexpr size_t THREADS_PER_BANK = Params::kThreadsPerBank;
+  constexpr size_t BUFF_DIM_Y = Params::kBuffDimY;
+  constexpr size_t BUFF_DIM_X = Params::kBuffDimX;
+  constexpr size_t BUFF_IN_DIM_X = Params::kBuffInDimX;
+  constexpr size_t BUFF_IN_DIM_Y = Params::kBuffInDimY;
+  constexpr size_t BUFF_OUT_DIM_X = Params::kBuffOutDimX;
+  constexpr size_t BUFF_OUT_T_DIM_X = Params::kBuffOutTDimX;
+  constexpr size_t BUFF_OUT_T_DIM_Y = Params::kBuffOutTDimY;
+  constexpr size_t BUFF_IN_SIZE = Params::kBuffInSize;
+  constexpr size_t BUFF_OUT_SIZE = Params::kBuffOutSize;
+  constexpr size_t BUFF_OUT_T_SIZE = Params::kBuffOutTSize;
+  constexpr size_t STAGES = Params::kStages;
+  constexpr size_t WAVES = Params::kWaves;
+  constexpr size_t ITERATIONS_NORMAL = Params::kIterationsNormal;
+  constexpr size_t ITERATIONS_TRANSPOSE = Params::kIterationsTranspose;
+  constexpr size_t BUFF_OUT_IT_OFFSET = Params::kBuffOutItOffset;
+
   constexpr bool NO_ACTIVATIONS_NOT_FP32_INPUT =
       (!COMPUTE_ACTIVATIONS) && (!std::is_same_v<IType, float>);
 
@@ -872,7 +929,7 @@ __global__ void __launch_bounds__(THREADS_NUM)
     }
   }
   const size_t rng_sequence =
-      threadIdx.x + blockIdx.x * THREADS_NUM + blockIdx.y * gridDim.x * THREADS_NUM;
+    threadIdx.x + blockIdx.x * THREADS_PER_BLOCK + blockIdx.y * gridDim.x * THREADS_PER_BLOCK;
   const size_t rng_seed = rng_state != nullptr ? rng_state[0] : 0;
   const size_t rng_offset = rng_state != nullptr ? rng_state[1] : 0;
   RNG rng(rng_seed, rng_sequence, rng_offset);
@@ -882,11 +939,15 @@ __global__ void __launch_bounds__(THREADS_NUM)
       0;  // Index of the random number. It increments each time when used and resets to 0 if reaches 4x
 
   // NEW: 2D Block-based scaling constants
-  constexpr size_t BLOCK_DIM = 16;
-  constexpr size_t BLOCKS_PER_TILE_Y = TILE_DIM_Y / BLOCK_DIM;  // 32/16 = 2
-  constexpr size_t BLOCKS_PER_TILE_X = TILE_DIM_X / BLOCK_DIM;  // 128/16 = 8
+  constexpr size_t BLOCK_DIM = BLOCK_SIZE;
+  constexpr size_t BLOCKS_PER_TILE_Y = TILE_DIM_Y / BLOCK_DIM;
+  constexpr size_t BLOCKS_PER_TILE_X = TILE_DIM_X / BLOCK_DIM;
+  static_assert(TILE_DIM_Y % BLOCK_DIM == 0,
+                "Tile height must be divisible by NVFP4 block size for 2D quantization.");
+  static_assert(TILE_DIM_X % BLOCK_DIM == 0,
+                "Tile width must be divisible by NVFP4 block size for 2D quantization.");
   constexpr size_t ITERATIONS_BLOCK = 2;  // iterations to calculate 2d block amaxes of 1 tile
-  constexpr size_t BLOCKS_PER_WARP = BLOCKS_PER_TILE_X / (THREADS_NUM / 32);  // 8 / (128/32) = 2
+  constexpr size_t BLOCKS_PER_WARP = BLOCKS_PER_TILE_X / (THREADS_PER_BLOCK / 32);
 
   constexpr bool IS_CACHED_ACT_OP = COMPUTE_ACTIVATIONS;
 
@@ -995,7 +1056,7 @@ __global__ void __launch_bounds__(THREADS_NUM)
     return thread_amax;
   };
 
-  initialize_barriers<STAGES, THREADS_NUM>(mbar, is_master_thread);
+  initialize_barriers<STAGES, THREADS_PER_BLOCK>(mbar, is_master_thread);
 
   copy_2d_to_shared(&in_sh[0], &tensor_map_input, block_offset_X, block_offset_Y, shmem_buff_size,
                     &mbar[0], is_master_thread);
@@ -1396,13 +1457,13 @@ void nvfp4_quantize_transpose(const Tensor &input, const Tensor *noop, Tensor *o
   // only kernel shape we support today.
   const size_t requested_block_size =
       (quant_config != nullptr && quant_config->block_size != 0) ? quant_config->block_size : 0;
-  constexpr size_t kDefaultBlockSize = nvfp4_transpose::SCALE_DIM;
+  constexpr size_t kDefaultBlockSize = nvfp4_transpose::kNvfp4DefaultBlockSize;
   const size_t resolved_block_size =
       (requested_block_size != 0) ? requested_block_size : kDefaultBlockSize;
   NVTE_CHECK(resolved_block_size == kDefaultBlockSize,
              "NVFP4 requires block_size=16, but QuantizationConfig requested ",
              resolved_block_size, ".");
-  const size_t block_size = resolved_block_size;
+  const size_t nvfp4_block_size = resolved_block_size;
 
   bool use_stochastic_rounding = quant_config ? quant_config->stochastic_rounding : false;
 
@@ -1442,7 +1503,6 @@ void nvfp4_quantize_transpose(const Tensor &input, const Tensor *noop, Tensor *o
   const size_t blocks_Y = DIVUP(rows, CHUNK_DIM_Y);
   const size_t blocks_X = DIVUP(cols, CHUNK_DIM_X);
   const dim3 grid(blocks_X, blocks_Y);
-  const size_t block_size = THREADS_NUM;
 
   const size_t scale_stride = output->scale_inv.shape[1];
   const size_t scale_stride_transpose =
@@ -1483,43 +1543,64 @@ void nvfp4_quantize_transpose(const Tensor &input, const Tensor *noop, Tensor *o
     create_2D_tensor_map(tensor_map_output_transpose, output->columnwise_data, cols, rows,
                          BUFF_DIM_X, BUFF_DIM_Y, rows, 0, 4);
   }
-  constexpr size_t buff_elems = BUFF_DIM_Y * BUFF_DIM_X;
-  constexpr size_t buff_elems_total = BUFFS_NUM * buff_elems;
-  constexpr size_t buff_size_aligned_in =
-      DIVUP_TO_MULTIPLE(buff_elems_total * sizeof(IType), TMA_SHMEM_ALIGNMENT);
-  constexpr size_t buff_size_aligned_out =
-      DIVUP_TO_MULTIPLE((buff_elems_total * 4) / 8, TMA_SHMEM_ALIGNMENT);
-  const size_t buff_size_scales =
-      (CHUNK_DIM_Y * CHUNK_DIM_X) / block_size * sizeof(nvfp4_scale_t);
+  auto launch_for_block_size = [&](auto block_size_tag) {
+    using BlockTag = decltype(block_size_tag);
+    constexpr size_t BlockSize = BlockTag::value;
+    using Params = nvfp4_transpose::Nvfp4TransposeParams<BlockSize>;
 
-  constexpr size_t in_mem = buff_size_aligned_in;
+    constexpr size_t buff_elems = Params::kBuffDimY * Params::kBuffDimX;
+    constexpr size_t buff_elems_total = Params::kBuffersNum * buff_elems;
+    constexpr size_t buff_size_aligned_in =
+        DIVUP_TO_MULTIPLE(buff_elems_total * sizeof(IType), TMA_SHMEM_ALIGNMENT);
+    constexpr size_t buff_size_aligned_out =
+        DIVUP_TO_MULTIPLE((buff_elems_total * 4) / 8, TMA_SHMEM_ALIGNMENT);
+    const size_t buff_size_scales =
+        (CHUNK_DIM_Y * CHUNK_DIM_X) / BlockSize * sizeof(nvfp4_scale_t);
 
-  const size_t out_data_mem = buff_size_aligned_out;
-  const size_t out_data_transpose_mem = buff_size_aligned_out;
-  const size_t out_scales_transpose_mem = buff_size_scales;
+    const int threads_per_block = Params::kThreadsPerBlock;
+    constexpr size_t in_mem = buff_size_aligned_in;
 
-  const size_t out_mem = out_data_mem + out_data_transpose_mem;
+    const size_t out_data_mem = buff_size_aligned_out;
+    const size_t out_data_transpose_mem = buff_size_aligned_out;
+    const size_t out_scales_transpose_mem = buff_size_scales;
 
-  const size_t dshmem_size = in_mem + out_mem + out_scales_transpose_mem + TMA_SHMEM_ALIGNMENT;
+    const size_t out_mem = out_data_mem + out_data_transpose_mem;
+    const size_t dshmem_size = in_mem + out_mem + out_scales_transpose_mem + TMA_SHMEM_ALIGNMENT;
 
-  TRANSFORMER_ENGINE_SWITCH_CONDITION(
-      use_stochastic_rounding, USE_STOCHASTIC_ROUNDING,
+    TRANSFORMER_ENGINE_SWITCH_CONDITION(
+        use_stochastic_rounding, USE_STOCHASTIC_ROUNDING,
 
-      TRANSFORMER_ENGINE_SWITCH_CONDITION(return_transpose, RETURN_TRANSPOSE, {
-        auto kernel = nvfp4_transpose_kernel<COMPUTE_ACTIVATIONS, ParamOP, OP, IType,
-                                             USE_STOCHASTIC_ROUNDING, RETURN_TRANSPOSE>;
+        TRANSFORMER_ENGINE_SWITCH_CONDITION(return_transpose, RETURN_TRANSPOSE, {
+          auto launch_kernel = [&](auto kernel) {
+            cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, dshmem_size);
+            kernel<<<grid, threads_per_block, dshmem_size, stream>>>(
+                tensor_map_input, tensor_map_output, tensor_map_output_transpose, scales_ptr,
+                scales_transpose_ptr, noop_ptr, amax_rowwise_ptr, amax_colwise_ptr, rows, cols,
+                scale_stride, scale_stride_transpose, rng_state);
+          };
 
-        if constexpr (use_2d_quantization) {
-          kernel = nvfp4_transpose_kernel_2D<COMPUTE_ACTIVATIONS, ParamOP, OP, IType,
-                                             USE_STOCHASTIC_ROUNDING, RETURN_TRANSPOSE>;
-        }
+          if constexpr (use_2d_quantization) {
+            auto kernel = nvfp4_transpose_kernel_2D<BlockSize, COMPUTE_ACTIVATIONS, ParamOP, OP,
+                                                    IType, USE_STOCHASTIC_ROUNDING,
+                                                    RETURN_TRANSPOSE>;
+            launch_kernel(kernel);
+          } else {
+            auto kernel = nvfp4_transpose_kernel<BlockSize, COMPUTE_ACTIVATIONS, ParamOP, OP,
+                                                 IType, USE_STOCHASTIC_ROUNDING,
+                                                 RETURN_TRANSPOSE>;
+            launch_kernel(kernel);
+          }
+        }););
+  };
 
-        cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, dshmem_size);
-        kernel<<<grid, block_size, dshmem_size, stream>>>(
-            tensor_map_input, tensor_map_output, tensor_map_output_transpose, scales_ptr,
-            scales_transpose_ptr, noop_ptr, amax_rowwise_ptr, amax_colwise_ptr, rows, cols,
-            scale_stride, scale_stride_transpose, rng_state);
-      }););
+  switch (nvfp4_block_size) {
+    case 16:
+      launch_for_block_size(std::integral_constant<size_t, 16>{});
+      break;
+    default:
+      NVTE_ERROR("NVFP4 block size ", nvfp4_block_size,
+                 " is not supported for transpose quantization.");
+  }
 #else
   NVTE_ERROR("FP4 support requires CUDA 12.8+, but compile-time CUDA version is ", CUDA_VERSION);
 #endif  // CUDA_VERSION > 12080

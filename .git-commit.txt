@@ -1,4 +1,5 @@
-Document latest block-size work in statefile
+Parameterize NVFP4 transpose & swizzle block sizes
 
-- capture MXFP8 quantization parameterization and dequantization dispatcher changes in llm.state
-- clarify remaining CUDA kernel TODOs (nvfp4 transpose + swizzle) and next focus areas for SM120
+- template nvfp4 transpose kernels and host dispatcher on block size, wiring QuantizationConfig metadata into launch selection while preserving existing 16-element support
+- add compile-time traits for shuffle/tile constants and dispatch through per-block-size helpers instead of hard-coded values
+- ensure swizzle utilities derive NVFP4 block sizes from tensor metadata when sizing scale buffers to keep distributed paths aware of SM120 configurations
