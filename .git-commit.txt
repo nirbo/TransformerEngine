@@ -1,7 +1,7 @@
 Changes:
-- Imported the NVFP4 block scaling constant into the distributed helpers and used tensor metadata to determine the block size when preparing all-gather buffers.
-- Replaced the remaining literal `16` in the NVFP4 scale gather path with the resolved block size so slicing respects runtime configuration.
-- Logged the distributed metadata change in llm.state for continuity.
+- Imported the MXFP8 block scaling constant into the distributed helpers and threaded block-size metadata through the all-gather path.
+- Replaced the remaining literal 32 divisor with the resolved block size so columnwise scale buffers follow runtime configuration.
+- Logged the MXFP8 metadata usage in llm.state.
 
 Testing:
-- Not run (metadata-only adjustments).
+- Not run (metadata-only change).

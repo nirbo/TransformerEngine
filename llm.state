@@ -25,6 +25,7 @@
 - Updated NVFP4 swizzle utilities to infer block sizes from tensor metadata instead of relying on the hard-coded 16 literal (retaining the existing layout while adding validation).
 - Adjusted NVFP4 transpose host launch bookkeeping to use the resolved block size when sizing shared-memory buffers, keeping future block variants aligned.
 - Distributed NVFP4 all-gather now reads the tensor’s block size metadata when slicing/padding scale buffers, so collective ops stay consistent with runtime configuration.
+- Distributed MXFP8 all-gather mirrors the metadata usage, swapping the remaining literal block width for the tensor/quantizer-provided value.
 
 ## Tool Usage Log
 - `sed`, `rg`, and `python` one-off scripts used for targeted inspections (no persistent side effects).

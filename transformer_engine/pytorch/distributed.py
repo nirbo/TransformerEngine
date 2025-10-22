@@ -35,7 +35,7 @@ from .utils import (
     safely_set_viewless_tensor_data,
     needs_quantized_gemm,
 )
-from .constants import dist_group_type, NVFP4_BLOCK_SCALING_SIZE
+from .constants import dist_group_type, NVFP4_BLOCK_SCALING_SIZE, MXFP8_BLOCK_SCALING_SIZE
 from .quantization import FP8GlobalStateManager, autocast
 from .tensor.float8_tensor import Float8Quantizer, Float8Tensor, Float8CurrentScalingQuantizer
 from .tensor.mxfp8_tensor import MXFP8Quantizer
@@ -1459,11 +1459,13 @@ def _all_gather_mxfp8(
     in_shape: Iterable[int]
     device: torch.device
     dtype: torch.dtype
+    block_size = MXFP8_BLOCK_SCALING_SIZE
     if isinstance(inp, torch.Tensor):
         in_shape = inp.size()
         device = inp.device
         dtype = inp.dtype
     elif isinstance(inp, MXFP8TensorStorage):
+        block_size = getattr(inp, "_block_size", MXFP8_BLOCK_SCALING_SIZE)
         if inp._rowwise_data is not None:
             in_shape = inp._rowwise_data.size()
             device = inp._rowwise_data.device
@@ -1552,7 +1554,7 @@ def _all_gather_mxfp8(
             # Remove padding from MXFP8 scale-inverses
             in_scale_inv = inp._columnwise_scale_inv
             out_scale_inv = out._columnwise_scale_inv
-            flattened_in_shape0 = math.prod(in_shape[:-1]) // 32
+            flattened_in_shape0 = math.prod(in_shape[:-1]) // block_size
             if in_scale_inv.size(0) != flattened_in_shape0:
                 in_scale_inv = in_scale_inv[:flattened_in_shape0]
                 out_scale_inv = out_scale_inv[: flattened_in_shape0 * world_size]
