@@ -31,22 +31,16 @@ namespace transformer_engine {
 
 namespace mxfp8_kernel {
 
-constexpr size_t SCALE_DIM_Y = 32;
-constexpr size_t SCALE_DIM_X = 32;
-
 constexpr size_t BUFFS_NUM = 2;
 constexpr size_t PACK_SIZE = 4;
-constexpr size_t WAVES = SCALE_DIM_X / PACK_SIZE;
 
 // Number of 1-byte elements that span 32 banks (4-byte each) of shared memory
 constexpr size_t TOTAL_BANKS_WIDTH = (32 * 4) / 1;  // 128
 
-// Number of threads (rowwise scaling) that span 32 banks (4-byte banks) of shared memory
-constexpr size_t THREADS_PER_BANK = TOTAL_BANKS_WIDTH / SCALE_DIM_X;  // 4 = 128 / 32
-
 template <bool IS_DBIAS, bool IS_DACT, bool IS_ACT, typename ParamOP,
           float (*OP)(float, const ParamOP &), typename IType, typename OType, bool ROWWISE_SCALING,
-          bool COLWISE_SCALING, size_t CHUNK_DIM_Y, size_t CHUNK_DIM_X, size_t THREADS_PER_CHUNK>
+          bool COLWISE_SCALING, size_t SCALE_DIM_Y, size_t SCALE_DIM_X, size_t CHUNK_DIM_Y,
+          size_t CHUNK_DIM_X, size_t THREADS_PER_CHUNK>
 __global__ void __launch_bounds__(THREADS_PER_CHUNK)
     cast_mxfp8_2D_kernel(const __grid_constant__ CUtensorMap tensor_map_input,
                          const __grid_constant__ CUtensorMap tensor_map_act_input,
@@ -62,6 +56,8 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
 
   using IType2 = typename ptx::FPx2<IType>;
   using OType2 = typename ptx::FPx2<OType>;
+  constexpr size_t WAVES = SCALE_DIM_X / PACK_SIZE;
+  constexpr size_t THREADS_PER_BANK = TOTAL_BANKS_WIDTH / SCALE_DIM_X;
 
   if constexpr (NO_ACTIVATIONS) {
     if (noop != nullptr && noop[0] == 1.0f) {
@@ -1525,23 +1521,18 @@ void cast_fp8_2D(const Tensor &input, const Tensor *act_input, Tensor *output, T
   );           // NOLINT(*)
 }
 
-template <bool IS_DBIAS, bool IS_DACT, bool IS_ACT, typename ParamOP,
+template <size_t BLOCK_SIZE, bool IS_DBIAS, bool IS_DACT, bool IS_ACT, typename ParamOP,
           float (*OP)(float, const ParamOP &)>
-void mxfp8_quantize(const Tensor &input, const Tensor *act_input,
-                    const Tensor *noop,  // TODO (ksivamani)
-                    Tensor *output, Tensor *dbias, Tensor *workspace,
-                    const QuantizationConfig *quant_config, cudaStream_t stream) {
+void mxfp8_quantize_impl(const Tensor &input, const Tensor *act_input,
+                         const Tensor *noop,  // TODO (ksivamani)
+                         Tensor *output, Tensor *dbias, Tensor *workspace,
+                         const QuantizationConfig *quant_config, cudaStream_t stream) {
   using namespace mxfp8_kernel;
   checkCuDriverContext(stream);
 
-  const size_t requested_block_size =
-      (quant_config != nullptr && quant_config->block_size != 0) ? quant_config->block_size : 0;
-  constexpr size_t kDefaultBlockSize = 32;
-  const size_t resolved_block_size =
-      (requested_block_size != 0) ? requested_block_size : kDefaultBlockSize;
-  NVTE_CHECK(resolved_block_size == kDefaultBlockSize,
-             "MXFP8 requires block_size=32, but QuantizationConfig requested ",
-             resolved_block_size, ".");
+  constexpr size_t SCALE_DIM_X = BLOCK_SIZE;
+  constexpr size_t SCALE_DIM_Y = BLOCK_SIZE;
+  (void)quant_config;
 
   bool use_rowwise_scaling = output->has_data();
   bool use_colwise_scaling = output->has_columnwise_data();
@@ -1559,6 +1550,16 @@ void mxfp8_quantize(const Tensor &input, const Tensor *act_input,
 
   const size_t rows = input.flat_first_dim();
   const size_t cols = input.flat_last_dim();
+  if (use_rowwise_scaling) {
+    NVTE_CHECK(cols % SCALE_DIM_X == 0,
+               "MXFP8 rowwise quantization expects last dimension divisible by ", SCALE_DIM_X,
+               ", but got cols=", cols, ".");
+  }
+  if (use_colwise_scaling) {
+    NVTE_CHECK(rows % SCALE_DIM_Y == 0,
+               "MXFP8 columnwise quantization expects first dimension divisible by ", SCALE_DIM_Y,
+               ", but got rows=", rows, ".");
+  }
 
   constexpr bool CAST_DBIAS_ONLY = IS_DBIAS && (!IS_DACT) && (!IS_ACT);
 
@@ -1666,11 +1667,13 @@ void mxfp8_quantize(const Tensor &input, const Tensor *act_input,
             case ScalingType::ROWWISE:
               NVTE_CHECK_CUDA(cudaFuncSetAttribute(
                   cast_mxfp8_2D_kernel<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP, IType, OType, true,
-                                       false, CHUNK_DIM_Y, CHUNK_DIM_X, THREADS_PER_CHUNK>,
+                                       false, SCALE_DIM_Y, SCALE_DIM_X, CHUNK_DIM_Y, CHUNK_DIM_X,
+                                       THREADS_PER_CHUNK>,
                   cudaFuncAttributeMaxDynamicSharedMemorySize, dshmem_size));
 
               cast_mxfp8_2D_kernel<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP, IType, OType, true,
-                                   false, CHUNK_DIM_Y, CHUNK_DIM_X, THREADS_PER_CHUNK>
+                                   false, SCALE_DIM_Y, SCALE_DIM_X, CHUNK_DIM_Y, CHUNK_DIM_X,
+                                   THREADS_PER_CHUNK>
                   <<<grid, block_size, dshmem_size, stream>>>(
                       tensor_map_input, tensor_map_act_input, tensor_map_output_rowwise,
                       tensor_map_output_colwise, scales_rowwise_ptr, scales_colwise_ptr, noop_ptr,
@@ -1681,11 +1684,13 @@ void mxfp8_quantize(const Tensor &input, const Tensor *act_input,
             case ScalingType::COLWISE:
               NVTE_CHECK_CUDA(cudaFuncSetAttribute(
                   cast_mxfp8_2D_kernel<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP, IType, OType, false,
-                                       true, CHUNK_DIM_Y, CHUNK_DIM_X, THREADS_PER_CHUNK>,
+                                       true, SCALE_DIM_Y, SCALE_DIM_X, CHUNK_DIM_Y, CHUNK_DIM_X,
+                                       THREADS_PER_CHUNK>,
                   cudaFuncAttributeMaxDynamicSharedMemorySize, dshmem_size));
 
               cast_mxfp8_2D_kernel<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP, IType, OType, false,
-                                   true, CHUNK_DIM_Y, CHUNK_DIM_X, THREADS_PER_CHUNK>
+                                   true, SCALE_DIM_Y, SCALE_DIM_X, CHUNK_DIM_Y, CHUNK_DIM_X,
+                                   THREADS_PER_CHUNK>
                   <<<grid, block_size, dshmem_size, stream>>>(
                       tensor_map_input, tensor_map_act_input, tensor_map_output_rowwise,
                       tensor_map_output_colwise, scales_rowwise_ptr, scales_colwise_ptr, noop_ptr,
@@ -1696,11 +1701,13 @@ void mxfp8_quantize(const Tensor &input, const Tensor *act_input,
             case ScalingType::BIDIMENSIONAL:
               NVTE_CHECK_CUDA(cudaFuncSetAttribute(
                   cast_mxfp8_2D_kernel<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP, IType, OType, true,
-                                       true, CHUNK_DIM_Y, CHUNK_DIM_X, THREADS_PER_CHUNK>,
+                                       true, SCALE_DIM_Y, SCALE_DIM_X, CHUNK_DIM_Y, CHUNK_DIM_X,
+                                       THREADS_PER_CHUNK>,
                   cudaFuncAttributeMaxDynamicSharedMemorySize, dshmem_size));
 
               cast_mxfp8_2D_kernel<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP, IType, OType, true, true,
-                                   CHUNK_DIM_Y, CHUNK_DIM_X, THREADS_PER_CHUNK>
+                                   SCALE_DIM_Y, SCALE_DIM_X, CHUNK_DIM_Y, CHUNK_DIM_X,
+                                   THREADS_PER_CHUNK>
                   <<<grid, block_size, dshmem_size, stream>>>(
                       tensor_map_input, tensor_map_act_input, tensor_map_output_rowwise,
                       tensor_map_output_colwise, scales_rowwise_ptr, scales_colwise_ptr, noop_ptr,
@@ -1714,6 +1721,29 @@ void mxfp8_quantize(const Tensor &input, const Tensor *act_input,
             reduce_dbias<IType>(workspace_ptr, dbias, dbias_rows, dbias_cols, stream);
           });  // NOLINT(*)
   );           // NOLINT(*)
+}
+
+template <bool IS_DBIAS, bool IS_DACT, bool IS_ACT, typename ParamOP,
+          float (*OP)(float, const ParamOP &)>
+void mxfp8_quantize(const Tensor &input, const Tensor *act_input,
+                    const Tensor *noop,  // TODO (ksivamani)
+                    Tensor *output, Tensor *dbias, Tensor *workspace,
+                    const QuantizationConfig *quant_config, cudaStream_t stream) {
+  const size_t requested_block_size =
+      (quant_config != nullptr && quant_config->block_size != 0) ? quant_config->block_size : 0;
+  constexpr size_t kDefaultBlockSize = 32;
+  const size_t resolved_block_size =
+      (requested_block_size != 0) ? requested_block_size : kDefaultBlockSize;
+
+  switch (resolved_block_size) {
+    case 32:
+      mxfp8_quantize_impl<32, IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP>(
+          input, act_input, noop, output, dbias, workspace, quant_config, stream);
+      break;
+    default:
+      NVTE_ERROR("MXFP8 requires block_size=32, but QuantizationConfig requested ",
+                 resolved_block_size, ".");
+  }
 }
 
 // This kernel supports only two scaling cases:

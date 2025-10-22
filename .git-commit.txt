@@ -1,6 +1,5 @@
-Changes:
-- Switched MXFP8/NVFP4 quantizer shape checks and tensor factories to reference the per-instance block size rather than hard-coded constants.
-- Keeps default values at 32/16 but allows quantizers to carry alternative tilings in the future.
+Parameterize MXFP8 quantization path for SM120 metadata
 
-Testing:
-- Not run.
+- extend MXFP8 CUDA kernel to accept compile-time block size template arguments instead of relying on hard-coded 32-element tiling
+- add templated host helper that dispatches on QuantizationConfig.block_size and validates tensor divisibility per scaling direction
+- expand MX scaling dimension switch macro with a 16-element case to unblock future NVFP4 dequant kernels

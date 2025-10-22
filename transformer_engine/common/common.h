@@ -678,6 +678,10 @@ struct TypeInfo {
       constexpr size_t DIM = 1;                                     \
       { __VA_ARGS__ }                                               \
     } break;                                                        \
+    case 16: {                                                      \
+      constexpr size_t DIM = 16;                                    \
+      { __VA_ARGS__ }                                               \
+    } break;                                                        \
     case 32: {                                                      \
       constexpr size_t DIM = 32;                                    \
       { __VA_ARGS__ }                                               \
