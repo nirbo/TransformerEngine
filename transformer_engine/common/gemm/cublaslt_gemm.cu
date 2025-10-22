@@ -160,18 +160,53 @@ GemmParam CanonicalizeGemmInput(const transformer_engine::Tensor &A, const cubla
   } else if (nvfp4) {
     // NVFP4 GEMM. Either the pure NVFP4 recipe or the FWD pass of the Hybrid NVFP4/MXFP8 recipe.
 
-    if (is_A_transposed) {
-      NVTE_CHECK(A.has_data(), "Input A is missing row-wise usage");
+    const bool supports_all_layouts = nvte_is_non_tn_fp8_gemm_supported();
+    if (supports_all_layouts) {
+      if (is_A_transposed) {
+        if (A.has_data()) {
+          ret.A = A.data.dptr;
+          ret.transA = transA;
+          ret.Atype = A.data.dtype;
+          ret.A_scale_inv = A.scale_inv.dptr;
+          ret.lda = k;
+        } else {
+          NVTE_CHECK(A.has_columnwise_data(), "Input A is missing column-wise usage");
+          ret.A = A.columnwise_data.dptr;
+          ret.transA = CUBLAS_OP_N;
+          ret.Atype = A.columnwise_data.dtype;
+          ret.A_scale_inv = A.columnwise_scale_inv.dptr;
+          ret.lda = m;
+        }
+      } else {
+        if (A.has_columnwise_data()) {
+          ret.A = A.columnwise_data.dptr;
+          ret.transA = transA;
+          ret.Atype = A.columnwise_data.dtype;
+          ret.A_scale_inv = A.columnwise_scale_inv.dptr;
+          ret.lda = m;
+        } else {
+          NVTE_CHECK(A.has_data(), "Input A is missing row-wise usage");
+          ret.A = A.data.dptr;
+          ret.transA = CUBLAS_OP_T;
+          ret.Atype = A.data.dtype;
+          ret.A_scale_inv = A.scale_inv.dptr;
+          ret.lda = k;
+        }
+      }
     } else {
-      NVTE_CHECK(is_nvfp4_scaling(A.scaling_mode),
-                 "Input A has unsupported combination of recipe and layout");
-      NVTE_CHECK(A.has_columnwise_data(), "Input A is missing column-wise usage");
+      if (is_A_transposed) {
+        NVTE_CHECK(A.has_data(), "Input A is missing row-wise usage");
+      } else {
+        NVTE_CHECK(is_nvfp4_scaling(A.scaling_mode),
+                   "Input A has unsupported combination of recipe and layout");
+        NVTE_CHECK(A.has_columnwise_data(), "Input A is missing column-wise usage");
+      }
+      ret.A = is_A_transposed ? A.data.dptr : A.columnwise_data.dptr;
+      ret.transA = CUBLAS_OP_T;  // NVFP4 gemm is only supported in TN layout pre-SM120.
+      ret.Atype = is_A_transposed ? A.data.dtype : A.columnwise_data.dtype;
+      ret.A_scale_inv = is_A_transposed ? A.scale_inv.dptr : A.columnwise_scale_inv.dptr;
+      ret.lda = k;
     }
-    ret.A = is_A_transposed ? A.data.dptr : A.columnwise_data.dptr;
-    ret.transA = CUBLAS_OP_T;  // NVFP4 gemm is only supported in TN layout.
-    ret.Atype = is_A_transposed ? A.data.dtype : A.columnwise_data.dtype;
-    ret.A_scale_inv = is_A_transposed ? A.scale_inv.dptr : A.columnwise_scale_inv.dptr;
-    ret.lda = k;
   } else if (mxfp8) {
     // MXFP8 GEMM. Either for pure MXFP8 recipe or backward of Hybrid NVFP4 recipe.
     // Note: Row-wise and column-wise data are scaled along different
@@ -249,18 +284,53 @@ GemmParam CanonicalizeGemmInput(const transformer_engine::Tensor &A, const cubla
                  "Leading dimension requirement on B for FP8 GEMM. Caller must pad.");
     }
   } else if (nvfp4) {
-    if (is_B_transposed) {
-      NVTE_CHECK(is_nvfp4_scaling(B.scaling_mode),
-                 "Input B has unsupported combination of recipe and layout");
-      NVTE_CHECK(B.has_columnwise_data(), "Input B is missing column-wise usage");
+    const bool supports_all_layouts = nvte_is_non_tn_fp8_gemm_supported();
+    if (supports_all_layouts) {
+      if (is_B_transposed) {
+        if (B.has_columnwise_data()) {
+          ret.B = B.columnwise_data.dptr;
+          ret.transB = transB;
+          ret.Btype = B.columnwise_data.dtype;
+          ret.B_scale_inv = B.columnwise_scale_inv.dptr;
+          ret.ldb = n;
+        } else {
+          NVTE_CHECK(B.has_data(), "Input B is missing row-wise usage");
+          ret.B = B.data.dptr;
+          ret.transB = CUBLAS_OP_N;
+          ret.Btype = B.data.dtype;
+          ret.B_scale_inv = B.scale_inv.dptr;
+          ret.ldb = k;
+        }
+      } else {
+        if (B.has_data()) {
+          ret.B = B.data.dptr;
+          ret.transB = transB;
+          ret.Btype = B.data.dtype;
+          ret.B_scale_inv = B.scale_inv.dptr;
+          ret.ldb = k;
+        } else {
+          NVTE_CHECK(B.has_columnwise_data(), "Input B is missing column-wise usage");
+          ret.B = B.columnwise_data.dptr;
+          ret.transB = CUBLAS_OP_T;
+          ret.Btype = B.columnwise_data.dtype;
+          ret.B_scale_inv = B.columnwise_scale_inv.dptr;
+          ret.ldb = n;
+        }
+      }
     } else {
-      NVTE_CHECK(B.has_data(), "Input B is missing row-wise usage");
+      if (is_B_transposed) {
+        NVTE_CHECK(is_nvfp4_scaling(B.scaling_mode),
+                   "Input B has unsupported combination of recipe and layout");
+        NVTE_CHECK(B.has_columnwise_data(), "Input B is missing column-wise usage");
+      } else {
+        NVTE_CHECK(B.has_data(), "Input B is missing row-wise usage");
+      }
+      ret.B = is_B_transposed ? B.columnwise_data.dptr : B.data.dptr;
+      ret.transB = CUBLAS_OP_N;  // NVFP4 gemm is only supported in TN layout pre-SM120.
+      ret.Btype = is_B_transposed ? B.columnwise_data.dtype : B.data.dtype;
+      ret.B_scale_inv = is_B_transposed ? B.columnwise_scale_inv.dptr : B.scale_inv.dptr;
+      ret.ldb = k;
     }
-    ret.B = is_B_transposed ? B.columnwise_data.dptr : B.data.dptr;
-    ret.transB = CUBLAS_OP_N;  // NVFP4 gemm is only supported in TN layout.
-    ret.Btype = is_B_transposed ? B.columnwise_data.dtype : B.data.dtype;
-    ret.B_scale_inv = is_B_transposed ? B.columnwise_scale_inv.dptr : B.scale_inv.dptr;
-    ret.ldb = k;
   } else if (mxfp8) {
     if (is_B_transposed) {
       NVTE_CHECK(B.has_columnwise_data(), "Input B is missing column-wise usage");
