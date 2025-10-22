@@ -1,7 +1,7 @@
 Changes:
-- Reworked MXFP8/NVFP4 master-weight casting so sharded (FSDP/ZeRO) optimizers reconstruct the full weight via all-reduce before quantizing, removing the previous NotImplemented paths.
-- Kept legacy behaviour for fully-replicated master weights while sharing the updated code path.
-- Noted the metadata-aware casting capability in llm.state.
+- Added a `block_size` field to the core tensor representation, clearing it during resets and populating it from quantization configs so the runtime retains block metadata.
+- Updated host-side checks and dequantization helpers to consult the stored block size, validating expected scale shapes and gating the MXFP8/NVFP4 kernels on supported sizes.
+- Captured the metadata-aware dequantization work in llm.state for continuity.
 
 Testing:
-- Not run (depends on distributed runtime).
+- Not run (logic-only changes).

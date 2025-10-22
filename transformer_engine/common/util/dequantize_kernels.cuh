@@ -272,8 +272,11 @@ void mxfp8_dequantize(const Tensor &input, Tensor *output, cudaStream_t stream) 
   NVTE_CHECK(output->data.shape == input.data.shape, "Input and output shapes need to match.");
 
   // TODO: Make more general
-  const size_t scale_dim_X_rowwise = use_rowwise_scaling ? 32 : 1;
-  const size_t scale_dim_Y_colwise = use_colwise_scaling ? 32 : 1;
+  const size_t block_size = input.block_size != 0 ? input.block_size : 32;
+  NVTE_CHECK(block_size == 32,
+             "MXFP8 dequantization currently supports block_size=32, but got ", block_size, ".");
+  const size_t scale_dim_X_rowwise = use_rowwise_scaling ? block_size : 1;
+  const size_t scale_dim_Y_colwise = use_colwise_scaling ? block_size : 1;
 
   const size_t rows = input.flat_first_dim();
   const size_t cols = input.flat_last_dim();
@@ -383,14 +386,16 @@ void fp4_dequantize(const Tensor &input, Tensor *output, cudaStream_t stream) {
   NVTE_CHECK(is_high_precision_dtype(output->data.dtype), "Output must be in higher precision.");
   NVTE_CHECK(output->data.shape == input.data.shape, "Input and output shapes need to match.");
 
-  constexpr int FP4_BLOCK_SIZE = 16;
   const size_t N = input.flat_first_dim();
   const size_t M = input.flat_last_dim();
 
-  NVTE_CHECK(M % FP4_BLOCK_SIZE == 0, "Last dimension of FP4 tensors needs to be divisible by ",
-             FP4_BLOCK_SIZE, ", but got ", input.data.shape, ".");
+  const size_t block_size = input.block_size != 0 ? input.block_size : 16;
+  NVTE_CHECK(block_size == 16, "FP4 dequantization currently supports block_size=16, but got ",
+             block_size, ".");
+  NVTE_CHECK(M % block_size == 0, "Last dimension of FP4 tensors needs to be divisible by ",
+             block_size, ", but got ", input.data.shape, ".");
 
-  const size_t Mread = M / FP4_BLOCK_SIZE;
+  const size_t Mread = M / block_size;
   const size_t total = N * Mread;
   const size_t threads = 512;
   const size_t blocks = DIVUP(total, threads);

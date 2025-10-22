@@ -121,6 +121,7 @@ struct Tensor {
 
   NVTEScalingMode scaling_mode;
   NVTETensor nvte_tensor;
+  uint32_t block_size;
 
   Tensor()
       : data(),
@@ -131,7 +132,8 @@ struct Tensor {
         scale_inv(nullptr, {1}, DType::kFloat32),
         columnwise_scale_inv(nullptr, {1}, DType::kFloat32),
         scaling_mode(NVTE_DELAYED_TENSOR_SCALING),
-        nvte_tensor(0) {}
+        nvte_tensor(0),
+        block_size(0) {}
 
   void clear() {
     data.clear();
@@ -142,6 +144,7 @@ struct Tensor {
     scale_inv.clear();
     columnwise_scale_inv.clear();
     scaling_mode = NVTE_DELAYED_TENSOR_SCALING;
+    block_size = 0;
   }
 
   explicit operator NVTETensor() const noexcept { return nvte_tensor; }

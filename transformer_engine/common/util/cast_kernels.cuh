@@ -2087,6 +2087,21 @@ void quantize_helper(const NVTETensor input, const NVTETensor grad, NVTETensor o
     quant_config_cpp = *reinterpret_cast<QuantizationConfig *>(quant_config);
   }
 
+  uint32_t config_block_size = 0;
+  if (quant_config != nullptr) {
+    config_block_size = quant_config_cpp.block_size;
+  }
+  const bool output_is_mxfp8 = output_tensor->scaling_mode == NVTE_MXFP8_1D_SCALING;
+  const bool output_is_nvfp4 = output_tensor->scaling_mode == NVTE_NVFP4_1D_SCALING;
+  const uint32_t fallback_block_size =
+      output_is_mxfp8 ? 32u : (output_is_nvfp4 ? 16u : 0u);
+  if (config_block_size == 0) {
+    config_block_size = fallback_block_size;
+  }
+  if (config_block_size != 0) {
+    output_tensor->block_size = config_block_size;
+  }
+
   // Noop flag
   Tensor dummy_tensor;
   Tensor *noop_tensor = &dummy_tensor;

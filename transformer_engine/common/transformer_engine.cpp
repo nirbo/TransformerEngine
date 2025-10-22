@@ -105,8 +105,9 @@ void CheckScaleTensorShape(const Tensor &t, const std::string &name) {
       // Need (4, 128) alignment even for e8 scaling factor
       auto block_alignment = std::vector<size_t>{128ul, 4ul};
       size_t expected_x, expected_y, alignment;
-      const size_t block_size_rowwise = 32;
-      const size_t block_size_colwise = 32;
+      const size_t block_size_rowwise =
+          t->block_size != 0 ? static_cast<size_t>(t->block_size) : 32;
+      const size_t block_size_colwise = block_size_rowwise;
 
       if (t.has_data()) {
         alignment = block_alignment[0];
@@ -136,9 +137,10 @@ void CheckScaleTensorShape(const Tensor &t, const std::string &name) {
                    t.columnwise_scale_inv.shape, ")");
       }
     } else if (t.scaling_mode == NVTE_NVFP4_1D_SCALING) {
+      const size_t block_size = t->block_size != 0 ? static_cast<size_t>(t->block_size) : 16;
       if (t.has_data()) {
         const size_t expected_y = DIVUP_TO_MULTIPLE(t.flat_first_dim(), 128);
-        const size_t expected_x = DIVUP_TO_MULTIPLE(DIVUP(t.flat_last_dim(), 16lu), 4);
+        const size_t expected_x = DIVUP_TO_MULTIPLE(DIVUP(t.flat_last_dim(), block_size), 4);
         const auto &expected = std::vector<size_t>{expected_y, expected_x};
         NVTE_CHECK(t.scale_inv.shape == expected, "Tensor \"", name,
                    "\" has invalid scale_inv shape (expected ", expected, ", got ",
@@ -146,7 +148,7 @@ void CheckScaleTensorShape(const Tensor &t, const std::string &name) {
       }
       if (t.has_columnwise_data()) {
         const size_t expected_y = DIVUP_TO_MULTIPLE(t.flat_last_dim(), 128);
-        const size_t expected_x = DIVUP_TO_MULTIPLE(DIVUP(t.flat_first_dim(), 16lu), 4);
+        const size_t expected_x = DIVUP_TO_MULTIPLE(DIVUP(t.flat_first_dim(), block_size), 4);
         const auto &expected = std::vector<size_t>{expected_y, expected_x};
         NVTE_CHECK(t.columnwise_scale_inv.shape == expected, "Tensor \"", name,
                    "\"  has invalid columnwise_scale_inv shape (expected ", expected, ", got ",
