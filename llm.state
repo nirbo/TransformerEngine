@@ -23,6 +23,7 @@
 - Plumbed `QuantizationConfig.block_size` validation into the MXFP8 and NVFP4 quantization entry points (checks only; CUDA kernels still assume fixed tiling while parameterization work continues under task 2).
 - Refactored the NVFP4 quantization launch to instantiate block-size-specialized kernels (templated on the row block length) so future SM120 tuning can dispatch alternative tilings, and routed associated buffer math / dimension checks through that parameter.
 - Updated NVFP4 swizzle utilities to infer block sizes from tensor metadata instead of relying on the hard-coded 16 literal (retaining the existing layout while adding validation).
+- Adjusted NVFP4 transpose host launch bookkeeping to use the resolved block size when sizing shared-memory buffers, keeping future block variants aligned.
 
 ## Tool Usage Log
 - `sed`, `rg`, and `python` one-off scripts used for targeted inspections (no persistent side effects).

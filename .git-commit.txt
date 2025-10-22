@@ -1,7 +1,6 @@
 Changes:
-- Added a helper in the swizzle utilities to infer NVFP4 block sizes from the tensor metadata and validate divisibility before launching the rowwise kernel.
-- Replaced usages of the hard-coded NVFP4 block literal with the inferred value so the path honors QuantizationConfig-derived block lengths without altering existing layouts.
-- Updated llm.state with the swizzle progress for continuity.
+- Reused the resolved NVFP4 block size when sizing shared-memory buffers in the transpose launch path so future block variants stay consistent.
+- Kept the existing kernel layout intact by limiting the change to host-side bookkeeping, and documented the progress in llm.state.
 
 Testing:
-- Not run (structural guard adjustments only).
+- Not run (buffer-sizing adjustment only).

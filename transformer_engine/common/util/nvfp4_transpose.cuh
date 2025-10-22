@@ -1402,6 +1402,7 @@ void nvfp4_quantize_transpose(const Tensor &input, const Tensor *noop, Tensor *o
   NVTE_CHECK(resolved_block_size == kDefaultBlockSize,
              "NVFP4 requires block_size=16, but QuantizationConfig requested ",
              resolved_block_size, ".");
+  const size_t block_size = resolved_block_size;
 
   bool use_stochastic_rounding = quant_config ? quant_config->stochastic_rounding : false;
 
@@ -1488,17 +1489,18 @@ void nvfp4_quantize_transpose(const Tensor &input, const Tensor *noop, Tensor *o
       DIVUP_TO_MULTIPLE(buff_elems_total * sizeof(IType), TMA_SHMEM_ALIGNMENT);
   constexpr size_t buff_size_aligned_out =
       DIVUP_TO_MULTIPLE((buff_elems_total * 4) / 8, TMA_SHMEM_ALIGNMENT);
-  constexpr size_t buff_size_scales = (CHUNK_DIM_Y * CHUNK_DIM_X) / 16 * sizeof(nvfp4_scale_t);
+  const size_t buff_size_scales =
+      (CHUNK_DIM_Y * CHUNK_DIM_X) / block_size * sizeof(nvfp4_scale_t);
 
   constexpr size_t in_mem = buff_size_aligned_in;
 
-  constexpr size_t out_data_mem = buff_size_aligned_out;
-  constexpr size_t out_data_transpose_mem = buff_size_aligned_out;
-  constexpr size_t out_scales_transpose_mem = buff_size_scales;
+  const size_t out_data_mem = buff_size_aligned_out;
+  const size_t out_data_transpose_mem = buff_size_aligned_out;
+  const size_t out_scales_transpose_mem = buff_size_scales;
 
-  constexpr size_t out_mem = out_data_mem + out_data_transpose_mem;
+  const size_t out_mem = out_data_mem + out_data_transpose_mem;
 
-  constexpr size_t dshmem_size = in_mem + out_mem + out_scales_transpose_mem + TMA_SHMEM_ALIGNMENT;
+  const size_t dshmem_size = in_mem + out_mem + out_scales_transpose_mem + TMA_SHMEM_ALIGNMENT;
 
   TRANSFORMER_ENGINE_SWITCH_CONDITION(
       use_stochastic_rounding, USE_STOCHASTIC_ROUNDING,
