@@ -13,6 +13,7 @@ from transformer_engine_torch import multi_tensor_scale, multi_tensor_compute_sc
 from .quantized_tensor import QuantizedTensor, Quantizer, QuantizedTensorStorage
 from .float8_tensor import Float8Tensor, Float8Quantizer, Float8CurrentScalingQuantizer
 from .mxfp8_tensor import MXFP8Tensor, MXFP8Quantizer
+from .nvfp4_tensor import NVFP4Tensor, NVFP4Quantizer
 from .float8_blockwise_tensor import Float8BlockwiseQTensor, Float8BlockQuantizer
 from ..optimizers.multi_tensor_apply import multi_tensor_applier
 from ..utils import is_non_tn_fp8_gemm_supported
@@ -75,6 +76,8 @@ def cast_master_weights_to_fp8(
     delayed_scaling_params = []
     current_scaling_params = []
     blockwise_scaling_params = []
+    mxfp8_scaling_params = []
+    nvfp4_scaling_params = []
 
     if fsdp_shard_model_weights is None:
         use_fsdp_shard_model_weights = False
@@ -121,8 +124,12 @@ def cast_master_weights_to_fp8(
                 (model_weight, master_weight, start_offset, fsdp_shard_model_weight)
             )
         elif isinstance(quantizer, MXFP8Quantizer):
-            raise NotImplementedError(
-                "cast_master_weights_to_fp8 for MXFP8BlockScaling is not supported yet"
+            mxfp8_scaling_params.append(
+                (model_weight, master_weight, start_offset, fsdp_shard_model_weight)
+            )
+        elif isinstance(quantizer, NVFP4Quantizer):
+            nvfp4_scaling_params.append(
+                (model_weight, master_weight, start_offset, fsdp_shard_model_weight)
             )
         else:
             raise ValueError(
@@ -140,6 +147,14 @@ def cast_master_weights_to_fp8(
     if len(blockwise_scaling_params) > 0:
         _cast_master_weights_to_fp8_blockwise_scaling(
             blockwise_scaling_params, group, use_fsdp_shard_model_weights
+        )
+    if len(mxfp8_scaling_params) > 0:
+        _cast_master_weights_to_mxfp8(
+            mxfp8_scaling_params, group, use_fsdp_shard_model_weights
+        )
+    if len(nvfp4_scaling_params) > 0:
+        _cast_master_weights_to_nvfp4(
+            nvfp4_scaling_params, group, use_fsdp_shard_model_weights
         )
 
 
@@ -435,6 +450,62 @@ def _cast_master_weights_to_fp8_blockwise_scaling(
         tex.fp8_block_scaling_partial_cast(
             master_weight, model_weight_fragment, scale, h, w, start_offset, block_len, fp8_dtype
         )
+
+
+def _cast_master_weights_to_mxfp8(params, group, use_fsdp_shard_model_weights=False):
+    r"""Helper function to cast master weights to MXFP8 primary weights.
+
+    This implementation currently supports only the case where the full master weight tensor
+    is available on each rank. ZeRO/FSDP sharded master weights are not yet handled.
+    """
+
+    if use_fsdp_shard_model_weights:
+        raise NotImplementedError(
+            "cast_master_weights_to_fp8 for MXFP8 with sharded master weights is not supported yet"
+        )
+
+    for model_weight, master_weight, start_offset, _ in params:
+        if master_weight is None:
+            continue
+
+        # Ensure we are operating on the full tensor so scales remain consistent across ranks.
+        tensor_numel = model_weight.numel()
+        if master_weight.numel() != tensor_numel or (start_offset not in (None, 0)):
+            raise NotImplementedError(
+                "cast_master_weights_to_fp8 for MXFP8 currently requires an unsharded master weight"
+            )
+
+        quantizer = model_weight._get_quantizer()
+        assert isinstance(model_weight, MXFP8Tensor)
+        master_tensor = master_weight.view(model_weight.shape)
+        quantizer.update_quantized(master_tensor, model_weight)
+
+
+def _cast_master_weights_to_nvfp4(params, group, use_fsdp_shard_model_weights=False):
+    r"""Helper function to cast master weights to NVFP4 primary weights.
+
+    As with MXFP8, only fully replicated master weights are supported for now.
+    """
+
+    if use_fsdp_shard_model_weights:
+        raise NotImplementedError(
+            "cast_master_weights_to_fp8 for NVFP4 with sharded master weights is not supported yet"
+        )
+
+    for model_weight, master_weight, start_offset, _ in params:
+        if master_weight is None:
+            continue
+
+        tensor_numel = model_weight.numel()
+        if master_weight.numel() != tensor_numel or (start_offset not in (None, 0)):
+            raise NotImplementedError(
+                "cast_master_weights_to_fp8 for NVFP4 currently requires an unsharded master weight"
+            )
+
+        quantizer = model_weight._get_quantizer()
+        assert isinstance(model_weight, NVFP4Tensor)
+        master_tensor = master_weight.view(model_weight.shape)
+        quantizer.update_quantized(master_tensor, model_weight)
 
 
 def post_all_gather_processing(model_weights: Union[torch.Tensor, List[torch.Tensor]]):
