@@ -1530,9 +1530,19 @@ template <bool IS_DBIAS, bool IS_DACT, bool IS_ACT, typename ParamOP,
           float (*OP)(float, const ParamOP &)>
 void mxfp8_quantize(const Tensor &input, const Tensor *act_input,
                     const Tensor *noop,  // TODO (ksivamani)
-                    Tensor *output, Tensor *dbias, Tensor *workspace, cudaStream_t stream) {
+                    Tensor *output, Tensor *dbias, Tensor *workspace,
+                    const QuantizationConfig *quant_config, cudaStream_t stream) {
   using namespace mxfp8_kernel;
   checkCuDriverContext(stream);
+
+  const size_t requested_block_size =
+      (quant_config != nullptr && quant_config->block_size != 0) ? quant_config->block_size : 0;
+  constexpr size_t kDefaultBlockSize = 32;
+  const size_t resolved_block_size =
+      (requested_block_size != 0) ? requested_block_size : kDefaultBlockSize;
+  NVTE_CHECK(resolved_block_size == kDefaultBlockSize,
+             "MXFP8 requires block_size=32, but QuantizationConfig requested ",
+             resolved_block_size, ".");
 
   bool use_rowwise_scaling = output->has_data();
   bool use_colwise_scaling = output->has_columnwise_data();
@@ -1961,7 +1971,7 @@ void fp8_quantize_arch_ge_100(const Tensor &input, const Tensor *act_input, cons
     }
     case NVTE_MXFP8_1D_SCALING: {
       mxfp8_quantize<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP>(input, act_input, noop, output, dbias,
-                                                             workspace, stream);
+                                                             workspace, nullptr, stream);
       break;
     }
     default:
@@ -2091,7 +2101,7 @@ void quantize_helper(const NVTETensor input, const NVTETensor grad, NVTETensor o
     case NVTE_MXFP8_1D_SCALING: {
       mxfp8_quantize<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP>(
           *input_tensor, activation_input_tensor, noop_tensor, output_tensor, dbias_tensor,
-          workspace_tensor, stream);
+          workspace_tensor, (quant_config != nullptr ? &quant_config_cpp : nullptr), stream);
       break;
     }
     case NVTE_NVFP4_1D_SCALING: {

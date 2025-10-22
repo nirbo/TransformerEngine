@@ -1,0 +1,50 @@
+################################################################################
+# File: llm.state
+# Purpose: Persistent restoration snapshot summarizing TransformerEngine SM120
+#          enablement work carried out in this session, including decisions,
+#          tool usage, outstanding tasks, and next steps for rapid resumption.
+# Related Files: 
+#   - quants-dev.md (project implementation plan tracking)
+#   - transformer_engine/common/gemm/cublaslt_gemm.cu (recent NVFP4/MXFP8 runtime updates)
+#   - transformer_engine/pytorch/tensor/* (tensor metadata changes)
+# Integration Points:
+#   - Serves as a checkpoint for collaborators or the same agent after context
+#     compaction to recover task state without re-reading commit history.
+#   - Should be consulted before making further modifications to ensure
+#     continuity with the documented plan.
+################################################################################
+
+## Summary Of Recent Progress
+- Enabled SM120 capability probing and mapping for MXFP8/NVFP4 (runtime + PyTorch gating).
+- Extended cuBLASLt GEMM path: SM120 compute modes, multi-heuristic fallback, NVFP4 alpha/beta staging, workspace enforcement in `nvte_cublas_gemm_v2`.
+- Treated SM120 as SM10x in PTX feature gates to activate optimized inline assembly.
+- Added block metadata (block size, scale dtype) to MXFP8/NVFP4 tensor storage and ensured construction paths propagate this information.
+- Updated project plan (`quants-dev.md`) and marked JAX follow-up as optional.
+- Plumbed `QuantizationConfig.block_size` validation into the MXFP8 quantization path (checks only; kernel parameterization continues under task 2).
+
+## Tool Usage Log
+- `sed`, `rg`, and `python` one-off scripts used for targeted inspections (no persistent side effects).
+- `apply_patch` employed for all file edits, ensuring atomic changes per instruction.
+- `git commit` executed after grouping logical changes; commits pushed to `dev-quant`.
+
+## Outstanding Work Items
+1. **CUDA Kernel Generalization**
+   - Replace hard-coded MXFP8/NVFP4 block sizes (32/16) inside CUDA kernels, transpose helpers, and swizzle utilities with values derived from `QuantizationConfig.block_size` (MXFP8 host path now validates incoming block size, CUDA kernels still pending).
+   - Introduce SM120-specific inline assembly paths (e.g., `cvt.rp.satfinite.ue8m0x2.f32`) guarded by the new feature macro.
+2. **PyTorch Framework Polish**
+   - Extend master-weight casting to support ZeRO/FSDP sharded weights for MXFP8/NVFP4.
+   - Remove legacy BF16 fallbacks in higher-level modules once runtime probes succeed.
+   - Update distributed collectives to honor MXFP8/NVFP4 metadata; ensure scale tensors exchange correctly.
+3. **Validation & Testing**
+   - Add SM120-focused unit/integration tests: GEMM smoke tests, kernel correctness, distributed flows.
+   - Confirm existing suites run cleanly with new metadata paths.
+4. **Documentation & Release Prep**
+   - Expand user-facing docs/examples describing SM120 requirements and configuration.
+   - Prepare release notes enumerating MXFP8/NVFP4 enablement steps.
+5. **Optional (Deferred)**
+   - Mirror updates into the JAX stack once PyTorch path stabilizes.
+
+## Next Suggested Actions
+1. Audit CUDA kernels (starting with `common/util/cast_kernels.cuh` and `common/util/nvfp4_transpose.cuh`) to parameterize block sizes, updating host launch sites accordingly.
+2. After kernel refactor, add targeted SM120 tests to verify new paths before touching framework layers.
+3. Proceed with distributed/master-weight enhancements once kernel metadata flow is validated.
