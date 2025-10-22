@@ -21,7 +21,7 @@
 - Added block metadata (block size, scale dtype) to MXFP8/NVFP4 tensor storage and ensured construction paths propagate this information.
 - Updated project plan (`quants-dev.md`) and marked JAX follow-up as optional.
 - Plumbed `QuantizationConfig.block_size` validation into the MXFP8 and NVFP4 quantization entry points (checks only; CUDA kernels still assume fixed tiling while parameterization work continues under task 2).
-- Refactored the NVFP4 quantization launch to instantiate block-size-specialized kernels (templated on the row block length) so future SM120 tuning can dispatch alternative tilings.
+- Refactored the NVFP4 quantization launch to instantiate block-size-specialized kernels (templated on the row block length) so future SM120 tuning can dispatch alternative tilings, and routed associated buffer math / dimension checks through that parameter.
 
 ## Tool Usage Log
 - `sed`, `rg`, and `python` one-off scripts used for targeted inspections (no persistent side effects).

@@ -1,7 +1,7 @@
 Changes:
-- Refactored NVFP4 quantization to instantiate block-size-specific kernels via a template parameter, plumbing the config-derived block length into the launch path.
-- Adjusted the NVFP4 CUDA kernel signature to accept the block size as a compile-time argument and updated dispatch sites accordingly.
-- Recorded the templated NVFP4 launch progress in llm.state for future resume context.
+- Reused the templated NVFP4 block size when computing shared-memory buffer footprints and tensor layout constraints.
+- Added explicit divisibility checks so the runtime fails fast if tensors are not compatible with the selected NVFP4 block length.
+- Noted the tighter buffer usage in llm.state for resume context.
 
 Testing:
-- Not run (compile-time templating only; no runtime coverage added yet).
+- Not run (assertion-only update).

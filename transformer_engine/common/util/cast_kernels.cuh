@@ -1744,6 +1744,10 @@ void nvfp4_quantize_impl(const Tensor &input, const Tensor *noop, Tensor *output
   const size_t rows = input.flat_first_dim();
   const size_t cols = input.flat_last_dim();
 
+  NVTE_CHECK(rows % BLOCK_SIZE == 0 && cols % BLOCK_SIZE == 0,
+             "NVFP4 quantization expects tensor dims divisible by ", BLOCK_SIZE,
+             ", but got rows=", rows, ", cols=", cols, ".");
+
   constexpr size_t CHUNK_DIM_Y = 128;
   constexpr size_t CHUNK_DIM_X = 128;
   constexpr size_t THREADS_PER_CHUNK = 128;
@@ -1803,7 +1807,7 @@ void nvfp4_quantize_impl(const Tensor &input, const Tensor *noop, Tensor *output
           constexpr size_t buff_size_aligned_out_mxfp8 =
               DIVUP_TO_MULTIPLE(buff_elems_total * sizeof(OType), TMA_SHMEM_ALIGNMENT);
           constexpr size_t buff_size_nvfp4_scales =
-              (CHUNK_DIM_Y * CHUNK_DIM_X) / 16 * sizeof(fp8e4m3);
+              (CHUNK_DIM_Y * CHUNK_DIM_X) / BLOCK_SIZE * sizeof(fp8e4m3);
           constexpr size_t buff_size_mxfp8_scales =
               (CHUNK_DIM_Y * CHUNK_DIM_X) / 32 * sizeof(e8m0_t);
 
