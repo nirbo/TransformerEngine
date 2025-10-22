@@ -1,4 +1,4 @@
-Generalize dequantization block-size dispatch
+Document latest block-size work in statefile
 
-- factor MXFP8 dequantization flow into a templated helper and runtime dispatcher so tensor metadata drives scale tiling instead of hard-coded constants
-- apply the same pattern to NVFP4/FP4 dequantization, validating tensor metadata while keeping existing supported block sizes
+- capture MXFP8 quantization parameterization and dequantization dispatcher changes in llm.state
+- clarify remaining CUDA kernel TODOs (nvfp4 transpose + swizzle) and next focus areas for SM120

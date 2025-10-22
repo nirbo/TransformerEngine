@@ -27,7 +27,8 @@
 - Distributed NVFP4 all-gather now reads the tensor’s block size metadata when slicing/padding scale buffers, so collective ops stay consistent with runtime configuration.
 - Distributed MXFP8 all-gather mirrors the metadata usage, swapping the remaining literal block width for the tensor/quantizer-provided value.
 - NVFP4/MXFP8 quantizers now surface their block-size setting so storage constructors and shape checks reuse the runtime metadata rather than hard-coded constants.
-- MXFP8/NVFP4 dequantization paths now cache the configured block size on the tensor and validate it at kernel launch, aligning host-side checks with runtime metadata.
+- Parameterized MXFP8 quantization kernels/launchers on compile-time block size template arguments so SM120 recipes rely on tensor metadata instead of literal 32-element assumptions.
+- Reworked MXFP8/NVFP4 dequantization entry points into templated helpers that dispatch based on tensor metadata while validating supported tilings.
 - Tensor wrappers now propagate block-size metadata from Python quantizers, ensuring newly created MXFP8/NVFP4 tensors immediately expose their configured tiling to the C++ runtime.
 - `cast_master_weights_to_fp8` now reconstructs MXFP8/NVFP4 master weights under FSDP/ZeRO via all-reduce so sharded optimizers can update the quantized replicas without falling back to BF16.
 
@@ -38,7 +39,7 @@
 
 ## Outstanding Work Items
 1. **CUDA Kernel Generalization**
-   - Replace hard-coded MXFP8/NVFP4 block sizes (32/16) inside CUDA kernels, transpose helpers, and swizzle utilities with values derived from `QuantizationConfig.block_size` (NVFP4 quantize launch now templates block size; remaining device kernels/transposes still fixed).
+   - Finish removing hard-coded MXFP8/NVFP4 block sizes inside device code: `nvfp4_transpose.cuh` and `swizzle.cu` still need to consume tensor metadata, and SM120 inline assembly fast paths remain TODO.
    - Introduce SM120-specific inline assembly paths (e.g., `cvt.rp.satfinite.ue8m0x2.f32`) guarded by the new feature macro.
 2. **PyTorch Framework Polish**
    - Extend master-weight casting to support ZeRO/FSDP sharded weights for MXFP8/NVFP4.
@@ -54,6 +55,6 @@
    - Mirror updates into the JAX stack once PyTorch path stabilizes.
 
 ## Next Suggested Actions
-1. Audit CUDA kernels (starting with `common/util/cast_kernels.cuh` and `common/util/nvfp4_transpose.cuh`) to parameterize block sizes, updating host launch sites accordingly.
+1. Continue parameterizing CUDA helpers by tackling `common/util/nvfp4_transpose.cuh` and the swizzle utilities so they respect runtime block-size metadata.
 2. After kernel refactor, add targeted SM120 tests to verify new paths before touching framework layers.
 3. Proceed with distributed/master-weight enhancements once kernel metadata flow is validated.
