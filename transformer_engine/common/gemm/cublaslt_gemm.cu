@@ -13,6 +13,7 @@
 #include <transformer_engine/transformer_engine.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <mutex>
 #include <vector>
@@ -505,7 +506,6 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
   cublasLtMatrixLayout_t Adesc = nullptr, Bdesc = nullptr, Cdesc = nullptr, Ddesc = nullptr;
   cublasLtMatmulPreference_t preference = nullptr;
   int returnedResults = 0;
-  cublasLtMatmulHeuristicResult_t heuristicResult = {};
   cublasLtEpilogue_t epilogue = CUBLASLT_EPILOGUE_DEFAULT;
 
   int64_t ld_gelumat = (int64_t)ldd;
@@ -818,24 +818,36 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
              "cuBLAS workspace pointer must be aligned to 256 bytes, got ",
              new_workspace_alignment);
 
+  std::array<cublasLtMatmulHeuristicResult_t, 8> heuristicResults{};
   const auto status =
       cublasLtMatmulAlgoGetHeuristic(handle, operationDesc, Adesc, Bdesc, Cdesc, Ddesc, preference,
-                                     1, &heuristicResult, &returnedResults);
+                                     heuristicResults.size(), heuristicResults.data(),
+                                     &returnedResults);
   NVTE_CHECK(status != CUBLAS_STATUS_NOT_SUPPORTED,
              "Unable to find suitable cuBLAS GEMM algorithm");
   NVTE_CHECK_CUBLAS(status);
-  if (returnedResults == 0) NVTE_ERROR("Unable to find any suitable algorithms");
+  NVTE_CHECK(returnedResults > 0, "Unable to find any suitable algorithms");
 
-  // D = alpha * (A * B) + beta * C
-  NVTE_CHECK_CUBLAS(cublasLtMatmul(handle, operationDesc, alpha, /* alpha */
-                                   param.A,                      /* A */
-                                   Adesc, param.B,               /* B */
-                                   Bdesc, beta,                  /* beta */
-                                   C,                            /* C */
-                                   Cdesc, D,                     /* D */
-                                   Ddesc, &heuristicResult.algo, /* algo */
-                                   aligned_workspace_ptr,        /* workspace */
-                                   workspaceSize, stream));      /* stream */
+  bool launched = false;
+  for (int algo_idx = 0; algo_idx < returnedResults && !launched; ++algo_idx) {
+    const auto &algo = heuristicResults[algo_idx].algo;
+    const auto launch_status =
+        cublasLtMatmul(handle, operationDesc, alpha,        /* alpha */
+                       param.A,                              /* A */
+                       Adesc, param.B,                       /* B */
+                       Bdesc, beta,                          /* beta */
+                       C,                                    /* C */
+                       Cdesc, D,                             /* D */
+                       Ddesc, &algo,                         /* algo */
+                       aligned_workspace_ptr,                /* workspace */
+                       workspaceSize, stream);               /* stream */
+    if (launch_status == CUBLAS_STATUS_NOT_SUPPORTED) {
+      continue;
+    }
+    NVTE_CHECK_CUBLAS(launch_status);
+    launched = true;
+  }
+  NVTE_CHECK(launched, "Unable to launch cuBLASLt GEMM with the available algorithms");
 
   // Update FP8 scale-inv in output tensor
   // Note: This is a WAR for the case when we have fp8 output but D->scale_inv is not allocated.

@@ -42,7 +42,7 @@
   - `CUBLASLT_MATMUL_MATRIX_SCALE_VEC32_UE8M0` for MXFP8,
   - `CUBLASLT_MATMUL_MATRIX_SCALE_VEC16_UE4M3` for NVFP4,
   - Set pointer/scale modes for the new datatype sizes.
-- ◻ Revisit heuristic caching to include MXFP8/NVFP4 combos so autotuning does not reject new layouts.
+- ✅ Revisit heuristic caching to include MXFP8/NVFP4 combos so autotuning does not reject new layouts.
 - ◻ Mirror changes in the `nvte_cublas_gemm_v2` wrapper (alpha/beta device pointers, workspace alignment) to guarantee NVFP4 paths run without manual overrides.
 
 ## 4. Quantization Kernel Work
