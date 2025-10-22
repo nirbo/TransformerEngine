@@ -21,6 +21,7 @@ from ..quantized_tensor import QuantizedTensorStorage
 # from ...constants import TE_DType as torch_to_transformer_engine_dtype
 from ..quantized_tensor import Quantizer
 from ...utils import _empty_tensor
+from ...constants import NVFP4_BLOCK_SCALING_SIZE
 
 
 @functools.lru_cache(maxsize=None)
@@ -118,11 +119,13 @@ class NVFP4TensorStorage(QuantizedTensorStorage):
         amax_columnwise: torch.Tensor,
         fp4_dtype: TE_DType,
         quantizer: Optional[Quantizer],
-        *args,
+        *,
+        block_size: int = 16,
+        scale_dtype: TE_DType = TE_DType.kFloat8E4M3,
         **kwargs,
     ):
 
-        instance = super().__new__(cls, *args, **kwargs)
+        instance = super().__new__(cls, **kwargs)
 
         instance._rowwise_data = rowwise_data
         instance._columnwise_data = columnwise_data
@@ -132,6 +135,8 @@ class NVFP4TensorStorage(QuantizedTensorStorage):
         instance._columnwise_scale_inv = columnwise_scale_inv
         instance._amax_rowwise = amax_rowwise
         instance._amax_columnwise = amax_columnwise
+        instance._block_size = block_size
+        instance._scale_dtype = scale_dtype
 
         return instance
 
@@ -159,6 +164,8 @@ class NVFP4TensorStorage(QuantizedTensorStorage):
             "amax_columnwise": self._amax_columnwise,
             "fp4_dtype": self._fp4_dtype,
             "quantizer": self._quantizer,
+            "block_size": getattr(self, "_block_size", None),
+            "scale_dtype": getattr(self, "_scale_dtype", None),
         }
 
     def prepare_for_saving(self) -> Tuple[list[Optional[torch.Tensor]], NVFP4TensorStorage]:
@@ -276,6 +283,8 @@ class NVFP4TensorStorage(QuantizedTensorStorage):
             amax_columnwise=self._amax_columnwise,
             quantizer=self._quantizer,
             fp4_dtype=self._fp4_dtype,
+            block_size=getattr(self, "_block_size", NVFP4_BLOCK_SCALING_SIZE),
+            scale_dtype=getattr(self, "_scale_dtype", TE_DType.kFloat8E4M3),
         )
 
     def __repr__(self):

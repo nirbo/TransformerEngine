@@ -15,7 +15,10 @@ from transformer_engine_torch import DType as TE_DType
 
 from ..quantized_tensor import QuantizedTensorStorage
 
-from ...constants import TE_DType as torch_to_transformer_engine_dtype
+from ...constants import (
+    TE_DType as torch_to_transformer_engine_dtype,
+    MXFP8_BLOCK_SCALING_SIZE,
+)
 
 from ..quantized_tensor import Quantizer
 
@@ -74,19 +77,23 @@ class MXFP8TensorStorage(QuantizedTensorStorage):
         columnwise_scale_inv: Optional[torch.Tensor],
         fp8_dtype: TE_DType,
         quantizer: Optional[Quantizer],
-        *args,
+        *,
+        block_size: int = 32,
+        scale_dtype: TE_DType = TE_DType.kFloat8E8M0,
         **kwargs,
     ):
         if cls is MXFP8TensorStorage:
             instance = object.__new__(cls)
         else:
-            instance = super().__new__(cls, *args, **kwargs)
+            instance = super().__new__(cls, **kwargs)
         instance._rowwise_data = rowwise_data
         instance._columnwise_data = columnwise_data
         instance._quantizer = quantizer.copy() if quantizer is not None else None
         instance._fp8_dtype = fp8_dtype
         instance._rowwise_scale_inv = rowwise_scale_inv
         instance._columnwise_scale_inv = columnwise_scale_inv
+        instance._block_size = block_size
+        instance._scale_dtype = scale_dtype
 
         return instance
 
@@ -110,6 +117,8 @@ class MXFP8TensorStorage(QuantizedTensorStorage):
             "columnwise_scale_inv": self._columnwise_scale_inv,
             "fp8_dtype": self._fp8_dtype,
             "quantizer": self._quantizer,
+            "block_size": getattr(self, "_block_size", None),
+            "scale_dtype": getattr(self, "_scale_dtype", None),
         }
 
     def prepare_for_saving(self) -> Tuple[list[Optional[torch.Tensor]], MXFP8TensorStorage]:
@@ -199,6 +208,8 @@ class MXFP8TensorStorage(QuantizedTensorStorage):
             columnwise_scale_inv=self._columnwise_scale_inv,
             fp8_dtype=self._fp8_dtype,
             quantizer=self._quantizer,
+            block_size=getattr(self, "_block_size", MXFP8_BLOCK_SCALING_SIZE),
+            scale_dtype=getattr(self, "_scale_dtype", tex.DType.kFloat8E8M0),
         )
 
     def __repr__(self):

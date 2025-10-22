@@ -37,7 +37,7 @@ from ..distributed import (
     in_fp8_activation_recompute_phase,
     _fsdp_gather_tensors,
 )
-from ..constants import dist_group_type
+from ..constants import dist_group_type, MXFP8_BLOCK_SCALING_SIZE
 from ..tensor.quantized_tensor import QuantizedTensor, QuantizedTensorStorage, Quantizer
 from ..tensor.float8_tensor import Float8Quantizer, Float8CurrentScalingQuantizer
 from ..tensor.mxfp8_tensor import MXFP8Quantizer
@@ -628,6 +628,8 @@ def fill_userbuffers_buffer_for_all_gather(
             columnwise_scale_inv=columnwise_scale_inv,
             fp8_dtype=local_tensor._fp8_dtype,
             quantizer=quantizer,
+            block_size=MXFP8_BLOCK_SCALING_SIZE,
+            scale_dtype=tex.DType.kFloat8E8M0,
         )
         return global_tensor, local_tensor
 

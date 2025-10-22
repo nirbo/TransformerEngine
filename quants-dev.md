@@ -62,7 +62,7 @@
 
 ## 5. Framework Integration
 1. **PyTorch tensors & optimizers**
-   - Extend `MXFP8TensorStorage` / `NVFP4TensorStorage` to carry the extra metadata (block size, guard scale) required by the updated kernels.
+   - ✅ Extend `MXFP8TensorStorage` / `NVFP4TensorStorage` to carry the extra metadata (block size, guard scale) required by the updated kernels.
    - Upgrade weight master-copy helpers (`cast_master_weights_to_fp8`, grad accumulation buffers) to maintain MXFP8/NVFP4 mirrors automatically; ensure CUDA graph capture keeps metadata resident.
    - Remove BF16 fallback guards in TELinear, LayerNormLinear, LayerNormMLP, SSM/Hyena wrappers once capability probe succeeds.
    - Update distributed collectives (`pytorch/distributed.py`) so all-gather / reduce-scatter paths understand MXFP8 layouts and call the NVFP4 post-processing utilities.

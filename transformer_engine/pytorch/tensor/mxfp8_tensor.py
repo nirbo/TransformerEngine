@@ -204,7 +204,6 @@ class MXFP8Tensor(MXFP8TensorStorage, QuantizedTensor):
     # which significantly reduces the Pybind11 overhead when calling the constructor from C++.
     def __new__(
         cls,
-        *args,
         rowwise_data: Optional[torch.Tensor],
         rowwise_scale_inv: Optional[torch.Tensor],
         columnwise_data: Optional[torch.Tensor],
@@ -215,13 +214,14 @@ class MXFP8Tensor(MXFP8TensorStorage, QuantizedTensor):
     ):
         instance = super().__new__(
             cls,
-            rowwise_data,
-            rowwise_scale_inv,
-            columnwise_data,
-            columnwise_scale_inv,
-            fp8_dtype,
-            quantizer,
-            *args,
+            rowwise_data=rowwise_data,
+            rowwise_scale_inv=rowwise_scale_inv,
+            columnwise_data=columnwise_data,
+            columnwise_scale_inv=columnwise_scale_inv,
+            fp8_dtype=fp8_dtype,
+            quantizer=quantizer,
+            block_size=MXFP8_BLOCK_SCALING_SIZE,
+            scale_dtype=tex.DType.kFloat8E8M0,
             **kwargs,
         )
         return instance
