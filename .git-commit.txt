@@ -1,6 +1,7 @@
 Changes:
-- Reused the resolved NVFP4 block size when sizing shared-memory buffers in the transpose launch path so future block variants stay consistent.
-- Kept the existing kernel layout intact by limiting the change to host-side bookkeeping, and documented the progress in llm.state.
+- Imported the NVFP4 block scaling constant into the distributed helpers and used tensor metadata to determine the block size when preparing all-gather buffers.
+- Replaced the remaining literal `16` in the NVFP4 scale gather path with the resolved block size so slicing respects runtime configuration.
+- Logged the distributed metadata change in llm.state for continuity.
 
 Testing:
-- Not run (buffer-sizing adjustment only).
+- Not run (metadata-only adjustments).

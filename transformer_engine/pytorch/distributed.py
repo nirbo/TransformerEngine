@@ -35,7 +35,7 @@ from .utils import (
     safely_set_viewless_tensor_data,
     needs_quantized_gemm,
 )
-from .constants import dist_group_type
+from .constants import dist_group_type, NVFP4_BLOCK_SCALING_SIZE
 from .quantization import FP8GlobalStateManager, autocast
 from .tensor.float8_tensor import Float8Quantizer, Float8Tensor, Float8CurrentScalingQuantizer
 from .tensor.mxfp8_tensor import MXFP8Quantizer
@@ -1284,6 +1284,8 @@ def _all_gather_nvfp4(
     device: torch.device
     dtype: torch.dtype
 
+    block_size = NVFP4_BLOCK_SCALING_SIZE
+
     # Construct packed shapes for input and input_t.
     if isinstance(inp, torch.Tensor) and not isinstance(inp, NVFP4TensorStorage):
         # High-precision tensor.
@@ -1294,6 +1296,7 @@ def _all_gather_nvfp4(
         device = inp.device
         dtype = inp.dtype
     elif isinstance(inp, NVFP4TensorStorage):
+        block_size = getattr(inp, "_block_size", NVFP4_BLOCK_SCALING_SIZE)
         if inp._rowwise_data is not None:
             in_shape = inp._rowwise_data.size()
             device = inp._rowwise_data.device
@@ -1396,7 +1399,7 @@ def _all_gather_nvfp4(
                 in_scale_inv = in_scale_inv[:flattened_in_shape0]
 
             # Remove dim1 padding (pack first).
-            unpadded_dim1 = flattened_in_shape1 * 2 // 16
+            unpadded_dim1 = flattened_in_shape1 * 2 // block_size
             if in_scale_inv.size(1) != unpadded_dim1:
                 in_scale_inv = in_scale_inv[:, :unpadded_dim1].contiguous()
 
