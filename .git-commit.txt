@@ -1,7 +1,7 @@
 Changes:
-- Added `block_size` attributes to the MXFP8 and NVFP4 quantizers so shape checks and tensor factories reuse metadata instead of literals.
-- Threaded those values through the respective tensor constructors, keeping the `_block_size` stored on tensor storage aligned with the quantizer setting.
-- Updated the state log to record the quantizer metadata change.
+- Reworked MXFP8/NVFP4 master-weight casting so sharded (FSDP/ZeRO) optimizers reconstruct the full weight via all-reduce before quantizing, removing the previous NotImplemented paths.
+- Kept legacy behaviour for fully-replicated master weights while sharing the updated code path.
+- Noted the metadata-aware casting capability in llm.state.
 
 Testing:
-- Not run (metadata-only update).
+- Not run (depends on distributed runtime).

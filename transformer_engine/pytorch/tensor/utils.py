@@ -456,29 +456,38 @@ def _cast_master_weights_to_mxfp8(params, group, use_fsdp_shard_model_weights=Fa
     r"""Helper function to cast master weights to MXFP8 primary weights.
 
     This implementation currently supports only the case where the full master weight tensor
-    is available on each rank. ZeRO/FSDP sharded master weights are not yet handled.
+    is available on each rank. ZeRO/FSDP sharded master weights are handled by reconstructing the
+    full weight via all-reduce before casting.
     """
 
-    if use_fsdp_shard_model_weights:
-        raise NotImplementedError(
-            "cast_master_weights_to_fp8 for MXFP8 with sharded master weights is not supported yet"
-        )
-
     for model_weight, master_weight, start_offset, _ in params:
-        if master_weight is None:
-            continue
-
-        # Ensure we are operating on the full tensor so scales remain consistent across ranks.
-        tensor_numel = model_weight.numel()
-        if master_weight.numel() != tensor_numel or (start_offset not in (None, 0)):
-            raise NotImplementedError(
-                "cast_master_weights_to_fp8 for MXFP8 currently requires an unsharded master weight"
-            )
-
         quantizer = model_weight._get_quantizer()
         assert isinstance(model_weight, MXFP8Tensor)
-        master_tensor = master_weight.view(model_weight.shape)
-        quantizer.update_quantized(master_tensor, model_weight)
+
+        if use_fsdp_shard_model_weights:
+            full_master = torch.zeros(
+                model_weight.numel(), dtype=model_weight.dtype, device=model_weight.device
+            )
+            if master_weight is not None:
+                assert start_offset is not None
+                end_offset = start_offset + master_weight.numel()
+                full_master[start_offset:end_offset] = master_weight.view(-1)
+            if torch.distributed.is_initialized():
+                torch.distributed.all_reduce(
+                    full_master, op=torch.distributed.ReduceOp.SUM, group=group
+                )
+            master_tensor = full_master.view(model_weight.shape)
+            quantizer.update_quantized(master_tensor, model_weight)
+        else:
+            if master_weight is None:
+                continue
+            tensor_numel = model_weight.numel()
+            if master_weight.numel() != tensor_numel or (start_offset not in (None, 0)):
+                raise NotImplementedError(
+                    "cast_master_weights_to_fp8 for MXFP8 currently requires an unsharded master weight"
+                )
+            master_tensor = master_weight.view(model_weight.shape)
+            quantizer.update_quantized(master_tensor, model_weight)
 
 
 def _cast_master_weights_to_nvfp4(params, group, use_fsdp_shard_model_weights=False):
@@ -487,25 +496,34 @@ def _cast_master_weights_to_nvfp4(params, group, use_fsdp_shard_model_weights=Fa
     As with MXFP8, only fully replicated master weights are supported for now.
     """
 
-    if use_fsdp_shard_model_weights:
-        raise NotImplementedError(
-            "cast_master_weights_to_fp8 for NVFP4 with sharded master weights is not supported yet"
-        )
-
     for model_weight, master_weight, start_offset, _ in params:
-        if master_weight is None:
-            continue
-
-        tensor_numel = model_weight.numel()
-        if master_weight.numel() != tensor_numel or (start_offset not in (None, 0)):
-            raise NotImplementedError(
-                "cast_master_weights_to_fp8 for NVFP4 currently requires an unsharded master weight"
-            )
-
         quantizer = model_weight._get_quantizer()
         assert isinstance(model_weight, NVFP4Tensor)
-        master_tensor = master_weight.view(model_weight.shape)
-        quantizer.update_quantized(master_tensor, model_weight)
+
+        if use_fsdp_shard_model_weights:
+            full_master = torch.zeros(
+                model_weight.numel(), dtype=model_weight.dtype, device=model_weight.device
+            )
+            if master_weight is not None:
+                assert start_offset is not None
+                end_offset = start_offset + master_weight.numel()
+                full_master[start_offset:end_offset] = master_weight.view(-1)
+            if torch.distributed.is_initialized():
+                torch.distributed.all_reduce(
+                    full_master, op=torch.distributed.ReduceOp.SUM, group=group
+                )
+            master_tensor = full_master.view(model_weight.shape)
+            quantizer.update_quantized(master_tensor, model_weight)
+        else:
+            if master_weight is None:
+                continue
+            tensor_numel = model_weight.numel()
+            if master_weight.numel() != tensor_numel or (start_offset not in (None, 0)):
+                raise NotImplementedError(
+                    "cast_master_weights_to_fp8 for NVFP4 currently requires an unsharded master weight"
+                )
+            master_tensor = master_weight.view(model_weight.shape)
+            quantizer.update_quantized(master_tensor, model_weight)
 
 
 def post_all_gather_processing(model_weights: Union[torch.Tensor, List[torch.Tensor]]):
