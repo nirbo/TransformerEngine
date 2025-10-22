@@ -547,19 +547,13 @@ namespace nvfp4_kernel {
 using namespace ptx;
 
 constexpr size_t SCALE_DIM_Y = 32;
-constexpr size_t SCALE_DIM_X = 16;
-
 constexpr size_t BUFFS_NUM = 2;
 constexpr size_t BUFF_DIM_Y = 32;
 
 constexpr size_t PACK_SIZE = 8;
-constexpr size_t WAVES = SCALE_DIM_X / PACK_SIZE;
 
 // Number of 4-bit elements that span 32 banks (4-byte each) of shared memory
 constexpr size_t TOTAL_BANKS_WIDTH = (32 * 4 * 8) / 4;  // 256
-
-// Number of threads (rowwise scaling) that span 32 banks (4-byte banks) of shared memory
-constexpr size_t THREADS_PER_BANK = TOTAL_BANKS_WIDTH / SCALE_DIM_X;  // 8 = 128 / 16
 
 // Compute per-block E4M3 encoding/decoding scaling factor
 __device__ __forceinline__ fp8e4m3 compute_decoding_scaling_factor(const float block_amax,
@@ -573,9 +567,9 @@ __device__ __forceinline__ fp8e4m3 compute_decoding_scaling_factor(const float b
 
 #define DIRECT_SCALING_FACTORS_STORE 1
 
-template <bool COMPUTE_ACTIVATIONS, typename ParamOP, float (*OP)(float, const ParamOP &),
-          typename IType, typename OType, bool COLWISE_SCALING, size_t CHUNK_DIM_Y,
-          size_t CHUNK_DIM_X, size_t THREADS_PER_CHUNK>
+template <size_t BLOCK_SIZE, bool COMPUTE_ACTIVATIONS, typename ParamOP,
+          float (*OP)(float, const ParamOP &), typename IType, typename OType,
+          bool COLWISE_SCALING, size_t CHUNK_DIM_Y, size_t CHUNK_DIM_X, size_t THREADS_PER_CHUNK>
 __global__ void __launch_bounds__(THREADS_PER_CHUNK)
     cast_nvfp4_kernel(const __grid_constant__ CUtensorMap tensor_map_input,
                       const __grid_constant__ CUtensorMap tensor_map_output_rowwise,
@@ -586,6 +580,11 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
                       const size_t cols, const size_t scale_stride_rowwise,
                       const size_t scale_stride_colwise) {
 #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
+  constexpr size_t SCALE_DIM_X = BLOCK_SIZE;
+  constexpr size_t SCALE_DIM = BLOCK_SIZE;
+  constexpr size_t WAVES = SCALE_DIM_X / PACK_SIZE;
+  constexpr size_t THREADS_PER_BANK = TOTAL_BANKS_WIDTH / SCALE_DIM_X;
+
   constexpr bool ROWWISE_SCALING = true;
   constexpr bool NO_ACTIVATIONS_NOT_FP32_INPUT =
       (!COMPUTE_ACTIVATIONS) && (!std::is_same_v<IType, float>);
@@ -1720,23 +1719,14 @@ void mxfp8_quantize(const Tensor &input, const Tensor *act_input,
 // This kernel supports only two scaling cases:
 // 1. r16c0  - Rowwise NVFP4
 // 2. r16c32 - Rowwise NVFP4 AND Colwise MXFP8
-template <bool COMPUTE_ACTIVATIONS, typename ParamOP, float (*OP)(float, const ParamOP &)>
-void nvfp4_quantize(const Tensor &input, const Tensor *noop, Tensor *output,
-                    const QuantizationConfig *quant_config, cudaStream_t stream) {
+template <size_t BLOCK_SIZE, bool COMPUTE_ACTIVATIONS, typename ParamOP,
+          float (*OP)(float, const ParamOP &)>
+void nvfp4_quantize_impl(const Tensor &input, const Tensor *noop, Tensor *output,
+                         const QuantizationConfig *quant_config, cudaStream_t stream) {
+  (void)quant_config;
   using namespace nvfp4_kernel;
   using namespace ptx;
   checkCuDriverContext(stream);
-
-  // Resolve the NVFP4 block size coming from the quantization config, defaulting to the kernel
-  // intrinsic value when the caller omits it.
-  const size_t requested_block_size =
-      (quant_config != nullptr && quant_config->block_size != 0) ? quant_config->block_size : 0;
-  constexpr size_t kDefaultBlockSize = nvfp4_kernel::SCALE_DIM_X;
-  const size_t resolved_block_size =
-      (requested_block_size != 0) ? requested_block_size : kDefaultBlockSize;
-  NVTE_CHECK(resolved_block_size == kDefaultBlockSize,
-             "NVFP4 requires block_size=16, but QuantizationConfig requested ",
-             resolved_block_size, ".");
 
   NVTE_CHECK(output->has_data(), "NVFP4 Output tensor must be allocated.");
   NVTE_CHECK(input.has_data(), "Cannot quantize tensor without rowwise data.");
@@ -1834,12 +1824,12 @@ void nvfp4_quantize(const Tensor &input, const Tensor *noop, Tensor *output,
           switch (scaling_type) {
             case ScalingType::ROWWISE:
               cudaFuncSetAttribute(
-                  cast_nvfp4_kernel<COMPUTE_ACTIVATIONS, ParamOP, OP, IType, OType, false,
-                                    CHUNK_DIM_Y, CHUNK_DIM_X, THREADS_PER_CHUNK>,
+                  cast_nvfp4_kernel<BLOCK_SIZE, COMPUTE_ACTIVATIONS, ParamOP, OP, IType, OType,
+                                    false, CHUNK_DIM_Y, CHUNK_DIM_X, THREADS_PER_CHUNK>,
                   cudaFuncAttributeMaxDynamicSharedMemorySize, dshmem_size);
 
-              cast_nvfp4_kernel<COMPUTE_ACTIVATIONS, ParamOP, OP, IType, OType, false, CHUNK_DIM_Y,
-                                CHUNK_DIM_X, THREADS_PER_CHUNK>
+              cast_nvfp4_kernel<BLOCK_SIZE, COMPUTE_ACTIVATIONS, ParamOP, OP, IType, OType, false,
+                                CHUNK_DIM_Y, CHUNK_DIM_X, THREADS_PER_CHUNK>
                   <<<grid, block_size, dshmem_size, stream>>>(
                       tensor_map_input, tensor_map_output_rowwise, tensor_map_output_colwise,
                       scales_rowwise_e4m3_ptr, scales_colwise_e8m0_ptr, noop_ptr, amax_ptr,
@@ -1848,12 +1838,12 @@ void nvfp4_quantize(const Tensor &input, const Tensor *noop, Tensor *output,
               break;
             case ScalingType::BIDIMENSIONAL:
               cudaFuncSetAttribute(
-                  cast_nvfp4_kernel<COMPUTE_ACTIVATIONS, ParamOP, OP, IType, OType, true,
-                                    CHUNK_DIM_Y, CHUNK_DIM_X, THREADS_PER_CHUNK>,
+                  cast_nvfp4_kernel<BLOCK_SIZE, COMPUTE_ACTIVATIONS, ParamOP, OP, IType, OType,
+                                    true, CHUNK_DIM_Y, CHUNK_DIM_X, THREADS_PER_CHUNK>,
                   cudaFuncAttributeMaxDynamicSharedMemorySize, dshmem_size);
 
-              cast_nvfp4_kernel<COMPUTE_ACTIVATIONS, ParamOP, OP, IType, OType, true, CHUNK_DIM_Y,
-                                CHUNK_DIM_X, THREADS_PER_CHUNK>
+              cast_nvfp4_kernel<BLOCK_SIZE, COMPUTE_ACTIVATIONS, ParamOP, OP, IType, OType, true,
+                                CHUNK_DIM_Y, CHUNK_DIM_X, THREADS_PER_CHUNK>
                   <<<grid, block_size, dshmem_size, stream>>>(
                       tensor_map_input, tensor_map_output_rowwise, tensor_map_output_colwise,
                       scales_rowwise_e4m3_ptr, scales_colwise_e8m0_ptr, noop_ptr, amax_ptr,
@@ -1862,6 +1852,22 @@ void nvfp4_quantize(const Tensor &input, const Tensor *noop, Tensor *output,
               break;
           });  // NOLINT(*)
   );           // NOLINT(*)
+}
+
+template <bool COMPUTE_ACTIVATIONS, typename ParamOP, float (*OP)(float, const ParamOP &)>
+void nvfp4_quantize(const Tensor &input, const Tensor *noop, Tensor *output,
+                    const QuantizationConfig *quant_config, cudaStream_t stream) {
+  const size_t requested_block_size =
+      (quant_config != nullptr && quant_config->block_size != 0) ? quant_config->block_size : 0;
+  constexpr size_t kDefaultBlockSize = 16;
+  const size_t resolved_block_size =
+      (requested_block_size != 0) ? requested_block_size : kDefaultBlockSize;
+  NVTE_CHECK(resolved_block_size == kDefaultBlockSize,
+             "NVFP4 requires block_size=16, but QuantizationConfig requested ",
+             resolved_block_size, ".");
+
+  nvfp4_quantize_impl<kDefaultBlockSize, COMPUTE_ACTIVATIONS, ParamOP, OP>(
+      input, noop, output, quant_config, stream);
 }
 
 namespace detail {

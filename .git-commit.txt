@@ -1,6 +1,7 @@
 Changes:
-- Added QuantizationConfig.block_size validation to NVFP4 quantize and transpose entry points so host code now rejects unsupported blocks.
-- Updated llm.state to reflect the broader validation coverage and remaining kernel work.
+- Refactored NVFP4 quantization to instantiate block-size-specific kernels via a template parameter, plumbing the config-derived block length into the launch path.
+- Adjusted the NVFP4 CUDA kernel signature to accept the block size as a compile-time argument and updated dispatch sites accordingly.
+- Recorded the templated NVFP4 launch progress in llm.state for future resume context.
 
 Testing:
-- Not run (logic adds host-side assertions only).
+- Not run (compile-time templating only; no runtime coverage added yet).
