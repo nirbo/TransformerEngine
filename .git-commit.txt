@@ -1,5 +1,4 @@
-Parameterize MXFP8 quantization path for SM120 metadata
+Generalize dequantization block-size dispatch
 
-- extend MXFP8 CUDA kernel to accept compile-time block size template arguments instead of relying on hard-coded 32-element tiling
-- add templated host helper that dispatches on QuantizationConfig.block_size and validates tensor divisibility per scaling direction
-- expand MX scaling dimension switch macro with a 16-element case to unblock future NVFP4 dequant kernels
+- factor MXFP8 dequantization flow into a templated helper and runtime dispatcher so tensor metadata drives scale tiling instead of hard-coded constants
+- apply the same pattern to NVFP4/FP4 dequantization, validating tensor metadata while keeping existing supported block sizes

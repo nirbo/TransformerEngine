@@ -250,7 +250,8 @@ void fp8_dequantize(const Tensor &input, Tensor *output, cudaStream_t stream) {
   );                      // NOLINT(*)
 }
 
-void mxfp8_dequantize(const Tensor &input, Tensor *output, cudaStream_t stream) {
+template <size_t BLOCK_SIZE>
+void mxfp8_dequantize_impl(const Tensor &input, Tensor *output, cudaStream_t stream) {
   bool use_rowwise_scaling = input.has_data();
   bool use_colwise_scaling = input.has_columnwise_data();
   checkCuDriverContext(stream);
@@ -272,11 +273,14 @@ void mxfp8_dequantize(const Tensor &input, Tensor *output, cudaStream_t stream) 
   NVTE_CHECK(output->data.shape == input.data.shape, "Input and output shapes need to match.");
 
   // TODO: Make more general
-  const size_t block_size = input.block_size != 0 ? input.block_size : 32;
-  NVTE_CHECK(block_size == 32,
-             "MXFP8 dequantization currently supports block_size=32, but got ", block_size, ".");
-  const size_t scale_dim_X_rowwise = use_rowwise_scaling ? block_size : 1;
-  const size_t scale_dim_Y_colwise = use_colwise_scaling ? block_size : 1;
+  constexpr size_t kBlockSize = BLOCK_SIZE;
+  const size_t configured_block_size =
+      input.block_size != 0 ? input.block_size : static_cast<size_t>(kBlockSize);
+  NVTE_CHECK(configured_block_size == kBlockSize,
+             "MXFP8 dequantization requires block_size=", kBlockSize,
+             ", but tensor metadata specified block_size=", configured_block_size, ".");
+  const size_t scale_dim_X_rowwise = use_rowwise_scaling ? kBlockSize : 1;
+  const size_t scale_dim_Y_colwise = use_colwise_scaling ? kBlockSize : 1;
 
   const size_t rows = input.flat_first_dim();
   const size_t cols = input.flat_last_dim();
@@ -338,6 +342,20 @@ void mxfp8_dequantize(const Tensor &input, Tensor *output, cudaStream_t stream) 
   NVTE_CHECK_CUDA(cudaGetLastError());
 }
 
+void mxfp8_dequantize(const Tensor &input, Tensor *output, cudaStream_t stream) {
+  const size_t requested_block_size =
+      input.block_size != 0 ? input.block_size : static_cast<size_t>(32);
+  switch (requested_block_size) {
+    case 32:
+      mxfp8_dequantize_impl<32>(input, output, stream);
+      break;
+    default:
+      NVTE_ERROR("MXFP8 dequantization currently supports block_size=32, but tensor metadata "
+                 "requested block_size=",
+                 requested_block_size, ".");
+  }
+}
+
 #if CUDA_VERSION >= 12080
 template <typename OType>
 __global__ void __launch_bounds__(512)
@@ -378,7 +396,8 @@ __global__ void __launch_bounds__(512)
 }
 #endif  // CUDA_VERSION
 
-void fp4_dequantize(const Tensor &input, Tensor *output, cudaStream_t stream) {
+template <size_t BLOCK_SIZE>
+void fp4_dequantize_impl(const Tensor &input, Tensor *output, cudaStream_t stream) {
 #if CUDA_VERSION >= 12080
   CheckInputTensor(input, "input");
   CheckOutputTensor(*output, "output");
@@ -389,13 +408,16 @@ void fp4_dequantize(const Tensor &input, Tensor *output, cudaStream_t stream) {
   const size_t N = input.flat_first_dim();
   const size_t M = input.flat_last_dim();
 
-  const size_t block_size = input.block_size != 0 ? input.block_size : 16;
-  NVTE_CHECK(block_size == 16, "FP4 dequantization currently supports block_size=16, but got ",
-             block_size, ".");
-  NVTE_CHECK(M % block_size == 0, "Last dimension of FP4 tensors needs to be divisible by ",
-             block_size, ", but got ", input.data.shape, ".");
+  constexpr size_t kBlockSize = BLOCK_SIZE;
+  const size_t configured_block_size =
+      input.block_size != 0 ? input.block_size : static_cast<size_t>(kBlockSize);
+  NVTE_CHECK(configured_block_size == kBlockSize,
+             "FP4 dequantization requires block_size=", kBlockSize,
+             ", but tensor metadata specified block_size=", configured_block_size, ".");
+  NVTE_CHECK(M % kBlockSize == 0, "Last dimension of FP4 tensors needs to be divisible by ",
+             kBlockSize, ", but got ", input.data.shape, ".");
 
-  const size_t Mread = M / block_size;
+  const size_t Mread = M / kBlockSize;
   const size_t total = N * Mread;
   const size_t threads = 512;
   const size_t blocks = DIVUP(total, threads);
@@ -409,6 +431,24 @@ void fp4_dequantize(const Tensor &input, Tensor *output, cudaStream_t stream) {
           reinterpret_cast<float *>(input.amax.dptr), N, Mread,
           input.scale_inv.shape.back()););  // NOLINT(*)
   NVTE_CHECK_CUDA(cudaGetLastError());
+#else
+  NVTE_ERROR("CUDA 12.8 or higher is needed for FP4 calculation!");
+#endif  // CUDA_VERSION >= 12080
+}
+
+void fp4_dequantize(const Tensor &input, Tensor *output, cudaStream_t stream) {
+#if CUDA_VERSION >= 12080
+  const size_t requested_block_size =
+      input.block_size != 0 ? input.block_size : static_cast<size_t>(16);
+  switch (requested_block_size) {
+    case 16:
+      fp4_dequantize_impl<16>(input, output, stream);
+      break;
+    default:
+      NVTE_ERROR("FP4 dequantization currently supports block_size=16, but tensor metadata "
+                 "requested block_size=",
+                 requested_block_size, ".");
+  }
 #else
   NVTE_ERROR("CUDA 12.8 or higher is needed for FP4 calculation!");
 #endif  // CUDA_VERSION >= 12080
