@@ -121,9 +121,15 @@ __device__ __forceinline__ float exp2f(e8m0_t biased_exp) {
   return __int_as_float(biased_exp << FP32_MANTISSA_BITS);
 }
 
+#if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1200)
+#define CUDA_ARCH_HAS_FEATURE_SM12X 1
+#else
+#define CUDA_ARCH_HAS_FEATURE_SM12X 0
+#endif
+
 #define CUDA_ARCH_HAS_FEATURE_SM10X_ALL                                                \
   ((__CUDA_ARCH_HAS_FEATURE__(SM100_ALL)) || (__CUDA_ARCH_HAS_FEATURE__(SM101_ALL)) || \
-   (__CUDA_ARCH_HAS_FEATURE__(SM103_ALL)))
+   (__CUDA_ARCH_HAS_FEATURE__(SM103_ALL)) || CUDA_ARCH_HAS_FEATURE_SM12X)
 
 __device__ __forceinline__ e8m0_t float_to_e8m0(float val) {
 #if CUDA_ARCH_HAS_FEATURE_SM10X_ALL
