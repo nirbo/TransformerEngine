@@ -46,6 +46,7 @@ class MXFP8Quantizer(Quantizer):
     ) -> None:
         super().__init__(rowwise=rowwise, columnwise=columnwise)
         self.dtype = fp8_dtype
+        self.block_size = MXFP8_BLOCK_SCALING_SIZE
 
     def update_quantized(
         self,
@@ -79,9 +80,9 @@ class MXFP8Quantizer(Quantizer):
         """Returns whether or not given inp can be quantized"""
         if inp.ndim < 2:
             return False
-        if inp.shape[-1] % MXFP8_BLOCK_SCALING_SIZE != 0:
+        if inp.shape[-1] % self.block_size != 0:
             return False
-        if math.prod(inp.shape[:-1]) % MXFP8_BLOCK_SCALING_SIZE != 0:
+        if math.prod(inp.shape[:-1]) % self.block_size != 0:
             return False
         return True
 
@@ -99,8 +100,7 @@ class MXFP8Quantizer(Quantizer):
             device = torch.device("cuda")
 
         assert (
-            shape[-1] % MXFP8_BLOCK_SCALING_SIZE == 0
-            and math.prod(shape[:-1]) % MXFP8_BLOCK_SCALING_SIZE == 0
+            shape[-1] % self.block_size == 0 and math.prod(shape[:-1]) % self.block_size == 0
         ), (
             f"Incorrect shape {shape} for MXFP8. Tensor dims must be divisible by"
             f" {MXFP8_BLOCK_SCALING_SIZE}"
@@ -110,7 +110,7 @@ class MXFP8Quantizer(Quantizer):
         data = torch.empty(shape, dtype=torch.uint8, device=device)
         scale_inv = torch.empty(
             round_up_to_nearest_multiple(math.prod(shape[:-1]), 128),
-            round_up_to_nearest_multiple(shape[-1] // MXFP8_BLOCK_SCALING_SIZE, 4),
+            round_up_to_nearest_multiple(shape[-1] // self.block_size, 4),
             dtype=torch.uint8,
             device=device,
         )
@@ -121,7 +121,7 @@ class MXFP8Quantizer(Quantizer):
         if self.columnwise_usage:
             columnwise_data = torch.empty_like(data)
             columnwise_scale_inv = torch.empty(
-                round_up_to_nearest_multiple(math.prod(shape[:-1]) // MXFP8_BLOCK_SCALING_SIZE, 4),
+                round_up_to_nearest_multiple(math.prod(shape[:-1]) // self.block_size, 4),
                 round_up_to_nearest_multiple(shape[-1], 128),
                 dtype=torch.uint8,
                 device=device,
@@ -220,7 +220,7 @@ class MXFP8Tensor(MXFP8TensorStorage, QuantizedTensor):
             columnwise_scale_inv=columnwise_scale_inv,
             fp8_dtype=fp8_dtype,
             quantizer=quantizer,
-            block_size=MXFP8_BLOCK_SCALING_SIZE,
+            block_size=quantizer.block_size if quantizer is not None else MXFP8_BLOCK_SCALING_SIZE,
             scale_dtype=tex.DType.kFloat8E8M0,
             **kwargs,
         )

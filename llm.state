@@ -26,6 +26,7 @@
 - Adjusted NVFP4 transpose host launch bookkeeping to use the resolved block size when sizing shared-memory buffers, keeping future block variants aligned.
 - Distributed NVFP4 all-gather now reads the tensor’s block size metadata when slicing/padding scale buffers, so collective ops stay consistent with runtime configuration.
 - Distributed MXFP8 all-gather mirrors the metadata usage, swapping the remaining literal block width for the tensor/quantizer-provided value.
+- NVFP4/MXFP8 quantizers now surface their block-size setting so storage constructors and shape checks reuse the runtime metadata rather than hard-coded constants.
 
 ## Tool Usage Log
 - `sed`, `rg`, and `python` one-off scripts used for targeted inspections (no persistent side effects).

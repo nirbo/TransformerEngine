@@ -1,7 +1,7 @@
 Changes:
-- Imported the MXFP8 block scaling constant into the distributed helpers and threaded block-size metadata through the all-gather path.
-- Replaced the remaining literal 32 divisor with the resolved block size so columnwise scale buffers follow runtime configuration.
-- Logged the MXFP8 metadata usage in llm.state.
+- Added `block_size` attributes to the MXFP8 and NVFP4 quantizers so shape checks and tensor factories reuse metadata instead of literals.
+- Threaded those values through the respective tensor constructors, keeping the `_block_size` stored on tensor storage aligned with the quantizer setting.
+- Updated the state log to record the quantizer metadata change.
 
 Testing:
-- Not run (metadata-only change).
+- Not run (metadata-only update).

@@ -153,6 +153,7 @@ class NVFP4Quantizer(Quantizer):
         self.stochastic_rounding = stochastic_rounding
         self.rht_matrix_random_sign_mask_t = get_random_sign_mask_for_rht(with_random_sign_mask)
         self.rht_matrix = get_rht_matrix(with_random_sign_mask)
+        self.block_size = NVFP4_BLOCK_SCALING_SIZE
 
     def update_quantized(
         self,
@@ -183,9 +184,9 @@ class NVFP4Quantizer(Quantizer):
         """Returns whether or not given inp can be quantized"""
         if inp.ndim < 2:
             return False
-        if inp.shape[-1] % NVFP4_BLOCK_SCALING_SIZE != 0:
+        if inp.shape[-1] % self.block_size != 0:
             return False
-        if math.prod(inp.shape[:-1]) % NVFP4_BLOCK_SCALING_SIZE != 0:
+        if math.prod(inp.shape[:-1]) % self.block_size != 0:
             return False
         return True
 
@@ -216,13 +217,14 @@ class NVFP4Quantizer(Quantizer):
         M = math.prod(shape[:-1])
         K = shape[-1]
 
+        block = self.block_size
         if columnwise:
             outer = round_up_to_nearest_multiple(K, 128)
-            inner = round_up_to_nearest_multiple(math.ceil(M / NVFP4_BLOCK_SCALING_SIZE), 4)
+            inner = round_up_to_nearest_multiple(math.ceil(M / block), 4)
             return (outer, inner)
         # rowwise
         outer = round_up_to_nearest_multiple(M, 128)
-        inner = round_up_to_nearest_multiple(math.ceil(K / NVFP4_BLOCK_SCALING_SIZE), 4)
+        inner = round_up_to_nearest_multiple(math.ceil(K / block), 4)
         return (outer, inner)
 
     @staticmethod
@@ -271,13 +273,13 @@ class NVFP4Quantizer(Quantizer):
         if device is None:
             device = torch.device("cuda")
 
-        assert shape[-1] % NVFP4_BLOCK_SCALING_SIZE == 0, (
+        assert shape[-1] % self.block_size == 0, (
             f"Incorrect shape {shape} for NVFP4. Tensor dims must be divisible by"
             f" {NVFP4_BLOCK_SCALING_SIZE}"
         )
 
         flat_first_dim = math.prod(shape[:-1])
-        assert flat_first_dim % NVFP4_BLOCK_SCALING_SIZE == 0, (
+        assert flat_first_dim % self.block_size == 0, (
             f"Incorrect shape {shape} for NVFP4. Tensor dims must be divisible by"
             f" {NVFP4_BLOCK_SCALING_SIZE}"
         )
@@ -395,7 +397,7 @@ class NVFP4Tensor(NVFP4TensorStorage, QuantizedTensor):
             amax_columnwise=amax_columnwise,
             fp4_dtype=fp4_dtype,
             quantizer=quantizer,
-            block_size=NVFP4_BLOCK_SCALING_SIZE,
+            block_size=quantizer.block_size if quantizer is not None else NVFP4_BLOCK_SCALING_SIZE,
             scale_dtype=TE_DType.kFloat8E4M3,
             **kwargs,
         )
