@@ -1,5 +1,4 @@
-Parameterize NVFP4 transpose & swizzle block sizes
+Record NVFP4 templating progress in statefile
 
-- template nvfp4 transpose kernels and host dispatcher on block size, wiring QuantizationConfig metadata into launch selection while preserving existing 16-element support
-- add compile-time traits for shuffle/tile constants and dispatch through per-block-size helpers instead of hard-coded values
-- ensure swizzle utilities derive NVFP4 block sizes from tensor metadata when sizing scale buffers to keep distributed paths aware of SM120 configurations
+- note that NVFP4 transpose kernels now template on block size metadata and swizzle paths consume inferred sizes
+- update remaining CUDA to-do items to focus on SM120 inline assembly and validation sequencing
