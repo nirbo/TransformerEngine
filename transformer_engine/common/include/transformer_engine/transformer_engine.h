@@ -591,6 +591,14 @@ class TensorWrapper {
     return set_parameter(kNVTEColumnwiseScaleInv, dptr, type, shape);
   }
 
+  TensorWrapper &set_block_size(uint32_t block_size) noexcept {
+    auto *tensor = transformer_engine::convertNVTETensor(tensor_);
+    if (tensor != nullptr) {
+      tensor->block_size = block_size;
+    }
+    return *this;
+  }
+
   template <typename ShapeType>
   TensorWrapper &set_columnwise_amax(void *dptr, DType type, const ShapeType &shape) noexcept {
     return set_parameter(kNVTEColumnwiseAmax, dptr, type, shape);

@@ -902,7 +902,9 @@ MXFP8Quantizer::MXFP8Quantizer(const py::handle& quantizer) : Quantizer(quantize
   this->dtype = quantizer.attr("dtype").cast<DType>();
 }
 
-void MXFP8Quantizer::set_quantization_params(TensorWrapper* tensor) const {}
+void MXFP8Quantizer::set_quantization_params(TensorWrapper* tensor) const {
+  tensor->set_block_size(MXFP8_BLOCK_SIZE);
+}
 
 std::pair<TensorWrapper, py::object> MXFP8Quantizer::create_tensor(const std::vector<size_t>& shape,
                                                                    DType dtype) const {
@@ -1170,7 +1172,8 @@ void NVFP4Quantizer::set_quantization_params(TensorWrapper* tensor) const {
   tensor->set_rowwise_data(rowwise_data.data_ptr, static_cast<DType>(rowwise_data.dtype),
                            rowwise_data.shape);
   tensor->set_columnwise_data(columnwise_data.data_ptr, static_cast<DType>(columnwise_data.dtype),
-                              columnwise_data.shape);
+                               columnwise_data.shape);
+  tensor->set_block_size(NVFP4_BLOCK_SIZE);
 }
 
 std::pair<TensorWrapper, py::object> NVFP4Quantizer::create_tensor(const std::vector<size_t>& shape,

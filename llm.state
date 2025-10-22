@@ -28,6 +28,7 @@
 - Distributed MXFP8 all-gather mirrors the metadata usage, swapping the remaining literal block width for the tensor/quantizer-provided value.
 - NVFP4/MXFP8 quantizers now surface their block-size setting so storage constructors and shape checks reuse the runtime metadata rather than hard-coded constants.
 - MXFP8/NVFP4 dequantization paths now cache the configured block size on the tensor and validate it at kernel launch, aligning host-side checks with runtime metadata.
+- Tensor wrappers now propagate block-size metadata from Python quantizers, ensuring newly created MXFP8/NVFP4 tensors immediately expose their configured tiling to the C++ runtime.
 - `cast_master_weights_to_fp8` now reconstructs MXFP8/NVFP4 master weights under FSDP/ZeRO via all-reduce so sharded optimizers can update the quantized replicas without falling back to BF16.
 
 ## Tool Usage Log

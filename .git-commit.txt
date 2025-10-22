@@ -1,7 +1,7 @@
 Changes:
-- Added a `block_size` field to the core tensor representation, clearing it during resets and populating it from quantization configs so the runtime retains block metadata.
-- Updated host-side checks and dequantization helpers to consult the stored block size, validating expected scale shapes and gating the MXFP8/NVFP4 kernels on supported sizes.
-- Captured the metadata-aware dequantization work in llm.state for continuity.
+- Added a TensorWrapper helper to set the underlying tensor block size so Python quantizers can seed metadata directly.
+- Ensured MXFP8/NVFP4 quantizers call the setter, keeping newly created tensors block-size aware before quantization runs.
+- Noted the wrapper plumbing in llm.state.
 
 Testing:
-- Not run (logic-only changes).
+- Not run (API wiring only).
