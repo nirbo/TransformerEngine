@@ -2095,6 +2095,17 @@ void quantize_helper(const NVTETensor input, const NVTETensor grad, NVTETensor o
   const bool output_is_nvfp4 = output_tensor->scaling_mode == NVTE_NVFP4_1D_SCALING;
   const uint32_t fallback_block_size =
       output_is_mxfp8 ? 32u : (output_is_nvfp4 ? 16u : 0u);
+  if (config_block_size != 0) {
+    if (output_is_mxfp8) {
+      NVTE_CHECK(config_block_size == 32u,
+                 "MXFP8 quantization currently requires block_size=32, but got ",
+                 config_block_size, ".");
+    } else if (output_is_nvfp4) {
+      NVTE_CHECK(config_block_size == 16u,
+                 "NVFP4 quantization currently requires block_size=16, but got ",
+                 config_block_size, ".");
+    }
+  }
   if (config_block_size == 0) {
     config_block_size = fallback_block_size;
   }

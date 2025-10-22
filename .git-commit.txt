@@ -1,7 +1,5 @@
 Changes:
-- Added a TensorWrapper helper to set the underlying tensor block size so Python quantizers can seed metadata directly.
-- Ensured MXFP8/NVFP4 quantizers call the setter, keeping newly created tensors block-size aware before quantization runs.
-- Noted the wrapper plumbing in llm.state.
+- Added validation so MXFP8/NVFP4 quantization rejects unsupported block sizes while still recording the configured value.
 
 Testing:
-- Not run (API wiring only).
+- Not run.
