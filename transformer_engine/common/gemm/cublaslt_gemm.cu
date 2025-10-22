@@ -515,6 +515,16 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
   if (A_type == CUDA_R_32F && B_type == CUDA_R_32F && D_type == CUDA_R_32F) {
     gemm_compute_type = CUBLAS_COMPUTE_32F_FAST_TF32;
   }
+  const int device_cc =
+      transformer_engine::cuda::sm_arch(transformer_engine::cuda::current_device());
+  const bool is_blackwell = (device_cc >= 120 && device_cc < 130);
+  if (is_blackwell) {
+    if (use_fp8) {
+      gemm_compute_type = CUBLAS_COMPUTE_32F_FAST_FP8XMMA;
+    } else if (use_fp4) {
+      gemm_compute_type = CUBLAS_COMPUTE_32F_FAST_FP4XMMA;
+    }
+  }
 
   // Create matrix descriptors. Not setting any extra attributes.
   NVTE_CHECK_CUBLAS(cublasLtMatrixLayoutCreate(&Adesc, A_type, param.transA == CUBLAS_OP_N ? m : k,
@@ -1174,3 +1184,9 @@ void nvte_multi_tensor_gemm(const NVTETensor *A, const NVTETensor *B, NVTETensor
     cublas_path();
   }
 }
+#ifndef CUBLAS_COMPUTE_32F_FAST_FP8XMMA
+#define CUBLAS_COMPUTE_32F_FAST_FP8XMMA CUBLAS_COMPUTE_32F
+#endif
+#ifndef CUBLAS_COMPUTE_32F_FAST_FP4XMMA
+#define CUBLAS_COMPUTE_32F_FAST_FP4XMMA CUBLAS_COMPUTE_32F
+#endif
