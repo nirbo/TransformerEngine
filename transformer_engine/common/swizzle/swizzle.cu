@@ -21,6 +21,27 @@ namespace {
 constexpr int MXFP8_BLOCK_SIZE = 32;
 constexpr int NVFP4_BLOCK_SIZE = 16;
 
+inline int infer_nvfp4_block_size(const Tensor* tensor, bool columnwise) {
+  if (tensor == nullptr) {
+    return NVFP4_BLOCK_SIZE;
+  }
+  const auto& scale_shape =
+      columnwise ? tensor->columnwise_scale_inv.shape : tensor->scale_inv.shape;
+  if (!scale_shape.empty()) {
+    const int major = columnwise ? static_cast<int>(tensor->flat_first_dim())
+                                 : static_cast<int>(tensor->flat_last_dim());
+    const int minor = static_cast<int>(scale_shape.back());
+    if (minor > 0) {
+      NVTE_CHECK(major % minor == 0,
+                 "Scale tensor shape incompatible with NVFP4 block size inference.");
+      const int candidate = major / minor;
+      NVTE_CHECK(candidate > 0, "Inferred NVFP4 block size must be positive.");
+      return candidate;
+    }
+  }
+  return NVFP4_BLOCK_SIZE;
+}
+
 constexpr __device__ __host__ int TB_DIM = 32;
 constexpr __device__ __host__ int NEW_SF_TILE_DIM_K = 16;
 constexpr __device__ __host__ int N_SF_PER_TD_PER_TILE = 4;
@@ -406,14 +427,22 @@ void swizzle_scaling_factors(const Tensor* input, Tensor* output, cudaStream_t s
     void *input_scale_inv_ptr, *output_scale_inv_ptr;
 
     if (!nvfp4 || input->has_data()) {
-      int block_scale_size = nvfp4 ? NVFP4_BLOCK_SIZE : MXFP8_BLOCK_SIZE;
+      int block_scale_size =
+          nvfp4 ? infer_nvfp4_block_size(input, /*columnwise=*/false) : MXFP8_BLOCK_SIZE;
+      NVTE_CHECK(block_scale_size > 0, "Block scale size must be positive.");
+      NVTE_CHECK(input->flat_last_dim() % block_scale_size == 0,
+                 "Rowwise tensor dim must be divisible by block size.");
       original_M = input->flat_first_dim();
       original_K = input->flat_last_dim() / block_scale_size;
       input_scale_inv_ptr = input->scale_inv.dptr;
       output_scale_inv_ptr = output->scale_inv.dptr;
     } else {
+      const int block_scale_size = infer_nvfp4_block_size(input, /*columnwise=*/true);
+      NVTE_CHECK(block_scale_size > 0, "Block scale size must be positive.");
+      NVTE_CHECK(input->flat_first_dim() % block_scale_size == 0,
+                 "Columnwise tensor dim must be divisible by block size.");
       original_M = input->flat_last_dim();
-      original_K = input->flat_first_dim() / NVFP4_BLOCK_SIZE;
+      original_K = input->flat_first_dim() / block_scale_size;
       input_scale_inv_ptr = input->columnwise_scale_inv.dptr;
       output_scale_inv_ptr = output->columnwise_scale_inv.dptr;
     }

@@ -1,7 +1,7 @@
 Changes:
-- Reused the templated NVFP4 block size when computing shared-memory buffer footprints and tensor layout constraints.
-- Added explicit divisibility checks so the runtime fails fast if tensors are not compatible with the selected NVFP4 block length.
-- Noted the tighter buffer usage in llm.state for resume context.
+- Added a helper in the swizzle utilities to infer NVFP4 block sizes from the tensor metadata and validate divisibility before launching the rowwise kernel.
+- Replaced usages of the hard-coded NVFP4 block literal with the inferred value so the path honors QuantizationConfig-derived block lengths without altering existing layouts.
+- Updated llm.state with the swizzle progress for continuity.
 
 Testing:
-- Not run (assertion-only update).
+- Not run (structural guard adjustments only).
