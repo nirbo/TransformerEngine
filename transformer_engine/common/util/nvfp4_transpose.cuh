@@ -1392,6 +1392,17 @@ template <bool COMPUTE_ACTIVATIONS, typename ParamOP, float (*OP)(float, const P
 void nvfp4_quantize_transpose(const Tensor &input, const Tensor *noop, Tensor *output,
                               const QuantizationConfig *quant_config, cudaStream_t stream) {
 #if CUDA_VERSION > 12080
+  // Resolve the NVFP4 block size from the optional quantization config and validate it matches the
+  // only kernel shape we support today.
+  const size_t requested_block_size =
+      (quant_config != nullptr && quant_config->block_size != 0) ? quant_config->block_size : 0;
+  constexpr size_t kDefaultBlockSize = nvfp4_transpose::SCALE_DIM;
+  const size_t resolved_block_size =
+      (requested_block_size != 0) ? requested_block_size : kDefaultBlockSize;
+  NVTE_CHECK(resolved_block_size == kDefaultBlockSize,
+             "NVFP4 requires block_size=16, but QuantizationConfig requested ",
+             resolved_block_size, ".");
+
   bool use_stochastic_rounding = quant_config ? quant_config->stochastic_rounding : false;
 
   // If transposed output is allocated, return the transposed data. Otherwise, it's not necesary to

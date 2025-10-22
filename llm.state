@@ -20,7 +20,7 @@
 - Treated SM120 as SM10x in PTX feature gates to activate optimized inline assembly.
 - Added block metadata (block size, scale dtype) to MXFP8/NVFP4 tensor storage and ensured construction paths propagate this information.
 - Updated project plan (`quants-dev.md`) and marked JAX follow-up as optional.
-- Plumbed `QuantizationConfig.block_size` validation into the MXFP8 quantization path (checks only; kernel parameterization continues under task 2).
+- Plumbed `QuantizationConfig.block_size` validation into the MXFP8 and NVFP4 quantization entry points (checks only; CUDA kernels still assume fixed tiling while parameterization work continues under task 2).
 
 ## Tool Usage Log
 - `sed`, `rg`, and `python` one-off scripts used for targeted inspections (no persistent side effects).
@@ -29,7 +29,7 @@
 
 ## Outstanding Work Items
 1. **CUDA Kernel Generalization**
-   - Replace hard-coded MXFP8/NVFP4 block sizes (32/16) inside CUDA kernels, transpose helpers, and swizzle utilities with values derived from `QuantizationConfig.block_size` (MXFP8 host path now validates incoming block size, CUDA kernels still pending).
+   - Replace hard-coded MXFP8/NVFP4 block sizes (32/16) inside CUDA kernels, transpose helpers, and swizzle utilities with values derived from `QuantizationConfig.block_size` (host-side validation now covers both MXFP8 and NVFP4; device kernels still pending).
    - Introduce SM120-specific inline assembly paths (e.g., `cvt.rp.satfinite.ue8m0x2.f32`) guarded by the new feature macro.
 2. **PyTorch Framework Polish**
    - Extend master-weight casting to support ZeRO/FSDP sharded weights for MXFP8/NVFP4.

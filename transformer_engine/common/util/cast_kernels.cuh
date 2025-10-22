@@ -1721,10 +1721,22 @@ void mxfp8_quantize(const Tensor &input, const Tensor *act_input,
 // 1. r16c0  - Rowwise NVFP4
 // 2. r16c32 - Rowwise NVFP4 AND Colwise MXFP8
 template <bool COMPUTE_ACTIVATIONS, typename ParamOP, float (*OP)(float, const ParamOP &)>
-void nvfp4_quantize(const Tensor &input, const Tensor *noop, Tensor *output, cudaStream_t stream) {
+void nvfp4_quantize(const Tensor &input, const Tensor *noop, Tensor *output,
+                    const QuantizationConfig *quant_config, cudaStream_t stream) {
   using namespace nvfp4_kernel;
   using namespace ptx;
   checkCuDriverContext(stream);
+
+  // Resolve the NVFP4 block size coming from the quantization config, defaulting to the kernel
+  // intrinsic value when the caller omits it.
+  const size_t requested_block_size =
+      (quant_config != nullptr && quant_config->block_size != 0) ? quant_config->block_size : 0;
+  constexpr size_t kDefaultBlockSize = nvfp4_kernel::SCALE_DIM_X;
+  const size_t resolved_block_size =
+      (requested_block_size != 0) ? requested_block_size : kDefaultBlockSize;
+  NVTE_CHECK(resolved_block_size == kDefaultBlockSize,
+             "NVFP4 requires block_size=16, but QuantizationConfig requested ",
+             resolved_block_size, ".");
 
   NVTE_CHECK(output->has_data(), "NVFP4 Output tensor must be allocated.");
   NVTE_CHECK(input.has_data(), "Cannot quantize tensor without rowwise data.");

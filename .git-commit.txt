@@ -1,7 +1,6 @@
 Changes:
-- Validated MXFP8 block scaling metadata by pluming QuantizationConfig.block_size into the quantize path.
-- Updated dispatcher calls so host code can forward configuration pointers or default to legacy behaviour.
-- Refreshed llm.state with the new validation step and clarified outstanding kernel work.
+- Added QuantizationConfig.block_size validation to NVFP4 quantize and transpose entry points so host code now rejects unsupported blocks.
+- Updated llm.state to reflect the broader validation coverage and remaining kernel work.
 
 Testing:
-- Not run (in-progress refactor; kernels unchanged).
+- Not run (logic adds host-side assertions only).
