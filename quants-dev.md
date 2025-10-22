@@ -32,23 +32,23 @@
 - In `common/util/ptx.cuh`, add SM120 feature macros so `float_to_e8m0`, NVFP4 transpose kernels, Hadamard transforms, and cp.async paths use the fast inline assembly on Blackwell (treat SM120 similarly to SM100/SM103).
 - Confirm any CUTLASS templates currently specialised for `SM100` are callable for `SM120`; add aliases if CUTLASS expects dedicated tags.
 
-## 3. cuBLASLt GEMM Integration (`common/gemm/cublaslt_gemm.cu`)
-- Register the new CUDA datatypes for MXFP8 (E8M0 scales) and NVFP4 (E2M1) in matrix layouts / describe objects.
-- Update `CanonicalizeGemmInput` to:
-  - Accept row/column data permutations for all TN/NT/NN/TT combinations when the SM120 probe passes.
-  - Avoid redundant columnwise buffers when both layouts exist.
-- Select the appropriate compute type for Blackwell (`CUBLAS_COMPUTE_32F_FAST_FP8XMMA` and FP4 equivalent) instead of generic FP32.
-- Push cuBLASLt descriptor attributes for block scaling:
+-## 3. cuBLASLt GEMM Integration (`common/gemm/cublaslt_gemm.cu`)
+- ✅ Register the new CUDA datatypes for MXFP8 (E8M0 scales) and NVFP4 (E2M1) in matrix layouts / describe objects.
+- ✅ Update `CanonicalizeGemmInput` to:
+  - ✅ Accept row/column data permutations for all TN/NT/NN/TT combinations when the SM120 probe passes.
+  - ✅ Avoid redundant columnwise buffers when both layouts exist.
+- ◻ Select the appropriate compute type for Blackwell (`CUBLAS_COMPUTE_32F_FAST_FP8XMMA` and FP4 equivalent) instead of generic FP32.
+- ◻ Push cuBLASLt descriptor attributes for block scaling:
   - `CUBLASLT_MATMUL_MATRIX_SCALE_VEC32_UE8M0` for MXFP8,
   - `CUBLASLT_MATMUL_MATRIX_SCALE_VEC16_UE4M3` for NVFP4,
   - Set pointer/scale modes for the new datatype sizes.
-- Revisit heuristic caching to include MXFP8/NVFP4 combos so autotuning does not reject new layouts.
-- Mirror changes in the `nvte_cublas_gemm_v2` wrapper (alpha/beta device pointers, workspace alignment) to guarantee NVFP4 paths run without manual overrides.
++ ◻ Revisit heuristic caching to include MXFP8/NVFP4 combos so autotuning does not reject new layouts.
++ ◻ Mirror changes in the `nvte_cublas_gemm_v2` wrapper (alpha/beta device pointers, workspace alignment) to guarantee NVFP4 paths run without manual overrides.
 
 ## 4. Quantization Kernel Work
 1. **Shared config (`common/common.h`, `QuantizationConfig`)**
-   - Add explicit knobs for block length (16 vs 32) and scale format (E8M0/E4M3) so kernels don’t rely on hard-coded constants.
-   - Ensure `QuantizationConfigWrapper` in PyTorch / JAX populates these knobs when constructing MXFP8 or NVFP4 recipes.
+   - ✅ Add explicit knobs for block length (16 vs 32) and scale format (E8M0/E4M3) so kernels don’t rely on hard-coded constants.
+   - ✅ Ensure `QuantizationConfigWrapper` in PyTorch populates these knobs when constructing MXFP8 or NVFP4 recipes. (JAX pending)
 
 2. **MXFP8 kernels (`common/util/cast_kernels.cuh`, `cast_gated_kernels.cuh`, `dequantize_kernels.cuh`)**
    - Generalise load/store loops to allow alternative block lengths where needed; keep warp scheduling correct for SM120’s wider shared-memory banks.

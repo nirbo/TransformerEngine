@@ -290,6 +290,8 @@ struct QuantizationConfig {
   NVTETensor rng_state = nullptr;
   bool nvfp4_2d_quantization = false;
   bool stochastic_rounding = false;
+  uint32_t block_size = 0;
+  NVTEDType block_scale_dtype = kNVTEFloat32;
 
   static constexpr size_t attr_sizes[] = {
       sizeof(bool),                          // force_pow_2_scales
@@ -298,7 +300,9 @@ struct QuantizationConfig {
       sizeof(Float8BlockScaleTensorFormat),  // float8_block_scale_tensor_format
       sizeof(NVTETensor),                    // rng_seed and offset
       sizeof(bool),                          // nvfp4_2d_quantization
-      sizeof(bool)                           // stochastic_rounding
+      sizeof(bool),                          // stochastic_rounding
+      sizeof(uint32_t),                      // block_size
+      sizeof(NVTEDType)                      // block_scale_dtype
   };
 };
 

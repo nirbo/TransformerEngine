@@ -813,6 +813,8 @@ void Float8BlockQuantizer::quantize(const TensorWrapper& input, TensorWrapper& o
   }
   quant_config.set_force_pow_2_scales(force_pow_2_scales);
   quant_config.set_amax_epsilon(amax_epsilon);
+  quant_config.set_block_size(128);
+  quant_config.set_block_scale_dtype(kNVTEFloat32);
   if (all_gather_usage) {
     quant_config.set_float8_block_scale_tensor_format(Float8BlockScaleTensorFormat::COMPACT);
   }
@@ -1097,6 +1099,8 @@ void MXFP8Quantizer::quantize(const TensorWrapper& input, TensorWrapper& out,
   if (noop_flag) {
     quant_config.set_noop_tensor(noop_flag->data());
   }
+  quant_config.set_block_size(MXFP8_BLOCK_SIZE);
+  quant_config.set_block_scale_dtype(kNVTEFloat8E8M0);
   NVTE_SCOPED_GIL_RELEASE({
     nvte_quantize_v2(input.data(), out.data(), quant_config, at::cuda::getCurrentCUDAStream());
   });
@@ -1459,6 +1463,8 @@ void NVFP4Quantizer::quantize_impl(const TensorWrapper& input, TensorWrapper& ou
   }
   quant_config.set_nvfp4_2d_quantization(this->with_2d_quantization);
   quant_config.set_stochastic_rounding(this->stochastic_rounding);
+  quant_config.set_block_size(NVFP4_BLOCK_SIZE);
+  quant_config.set_block_scale_dtype(kNVTEFloat8E4M3);
 
   // We only need RHT for columnwise usage.
   // flat first dim and last dim for multi dimensional input

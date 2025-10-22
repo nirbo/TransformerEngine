@@ -663,6 +663,21 @@ void nvte_get_quantization_config_attribute(NVTEQuantizationConfig config,
     case kNVTEQuantizationConfigFloat8BlockScaleTensorFormat:
       std::memcpy(buf, &config_.float8_block_scale_tensor_format, attr_size);
       break;
+    case kNVTEQuantizationConfigRNGState:
+      std::memcpy(buf, &config_.rng_state, attr_size);
+      break;
+    case kNVTEQuantizationConfigNVFP42DQuantization:
+      std::memcpy(buf, &config_.nvfp4_2d_quantization, attr_size);
+      break;
+    case kNVTEQuantizationConfigStochasticRounding:
+      std::memcpy(buf, &config_.stochastic_rounding, attr_size);
+      break;
+    case kNVTEQuantizationConfigBlockSize:
+      std::memcpy(buf, &config_.block_size, attr_size);
+      break;
+    case kNVTEQuantizationConfigBlockScaleDType:
+      std::memcpy(buf, &config_.block_scale_dtype, attr_size);
+      break;
     default:
       NVTE_ERROR("Unsupported NVTEQuantizationConfigAttribute (got ", static_cast<int>(attr), ")");
   }
@@ -706,6 +721,12 @@ void nvte_set_quantization_config_attribute(NVTEQuantizationConfig config,
       break;
     case kNVTEQuantizationConfigStochasticRounding:
       std::memcpy(&config_.stochastic_rounding, buf, attr_size);
+      break;
+    case kNVTEQuantizationConfigBlockSize:
+      std::memcpy(&config_.block_size, buf, attr_size);
+      break;
+    case kNVTEQuantizationConfigBlockScaleDType:
+      std::memcpy(&config_.block_scale_dtype, buf, attr_size);
       break;
     default:
       NVTE_ERROR("Unsupported NVTEQuantizationConfigAttribute (got ", static_cast<int>(attr), ")");

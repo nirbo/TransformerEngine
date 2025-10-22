@@ -336,6 +336,10 @@ enum NVTEQuantizationConfigAttribute {
   kNVTEQuantizationConfigNVFP42DQuantization = 5,
   /*! Whether to enable stochastic rounding */
   kNVTEQuantizationConfigStochasticRounding = 6,
+  /*! Block size used by block-scaled quantization kernels */
+  kNVTEQuantizationConfigBlockSize = 7,
+  /*! Datatype used to store block scale values */
+  kNVTEQuantizationConfigBlockScaleDType = 8,
   kNVTEQuantizationConfigNumAttributes
 };
 
@@ -884,6 +888,18 @@ class QuantizationConfigWrapper {
   void set_stochastic_rounding(bool stochastic_rounding) {
     nvte_set_quantization_config_attribute(config_, kNVTEQuantizationConfigStochasticRounding,
                                            &stochastic_rounding, sizeof(bool));
+  }
+
+  /*! \brief Set block size metadata for block-scaled quantization */
+  void set_block_size(uint32_t block_size) {
+    nvte_set_quantization_config_attribute(config_, kNVTEQuantizationConfigBlockSize,
+                                           &block_size, sizeof(uint32_t));
+  }
+
+  /*! \brief Set the datatype used to store block scales */
+  void set_block_scale_dtype(NVTEDType dtype) {
+    nvte_set_quantization_config_attribute(config_, kNVTEQuantizationConfigBlockScaleDType, &dtype,
+                                           sizeof(NVTEDType));
   }
 
  private:
