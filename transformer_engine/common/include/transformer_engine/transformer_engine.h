@@ -382,6 +382,12 @@ void nvte_destroy_quantization_config(NVTEQuantizationConfig config);
  */
 int nvte_is_non_tn_fp8_gemm_supported();
 
+/*! \brief Check if NVFP4 GEMM is supported.
+ *
+ *  \return A flag which indicates whether NVFP4 GEMM is supported on the current device.
+ */
+int nvte_is_nvfp4_supported();
+
 /*! \brief Performs a memset of the data at the given pointer and size in bytes.
  *
  *  \param[in] ptr Pointer to the memory to be set.

@@ -491,8 +491,13 @@ def is_non_tn_fp8_gemm_supported() -> bool:
     """Checks whether the device supports
     non-TN layouts for FP8 GEMMs.
     """
-    device_capability = torch.cuda.get_device_capability()
-    return (10, 0) <= device_capability < (12, 0) or device_capability >= (13, 0)
+    try:
+        import transformer_engine.pytorch.cpp_extensions as ext
+
+        return bool(ext.is_non_tn_fp8_gemm_supported())
+    except (ImportError, AttributeError):
+        device_capability = torch.cuda.get_device_capability()
+        return (10, 0) <= device_capability < (12, 0) or device_capability >= (13, 0)
 
 
 @functools.lru_cache(maxsize=None)

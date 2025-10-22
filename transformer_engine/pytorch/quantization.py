@@ -43,6 +43,17 @@ __all__ = [
 ]
 
 
+def _format_cublas_version(version: int) -> str:
+    major, remainder = divmod(int(version), 1000)
+    minor, patch = divmod(remainder, 100)
+    return f"{major}.{minor}.{patch}"
+
+
+def _runtime_cuda_version() -> str:
+    cuda_version = getattr(torch.version, "cuda", None)
+    return cuda_version if cuda_version is not None else "unknown"
+
+
 @functools.lru_cache(maxsize=None)
 def check_fp8_support() -> Tuple[bool, str]:
     """Return if fp8 support is available"""
@@ -60,19 +71,53 @@ def check_fp8_support() -> Tuple[bool, str]:
 @functools.lru_cache(maxsize=None)
 def check_mxfp8_support() -> Tuple[bool, str]:
     """Return if fp8 support is available"""
-    if get_device_compute_capability() >= (12, 0):
-        return False, "MXFP8 (for all gemm layouts) is not supported on 12.0+ architectures yet."
-    if get_device_compute_capability() >= (10, 0):  # blackwell and above
+    device_cc = get_device_compute_capability()
+    if device_cc < (10, 0):
+        return False, "Device compute capability 10.0 or higher required for MXFP8 execution."
+
+    try:
+        import transformer_engine.pytorch.cpp_extensions as ext
+
+        supported = bool(ext.is_non_tn_fp8_gemm_supported())
+    except (ImportError, AttributeError):
+        supported = (10, 0) <= device_cc < (12, 0) or device_cc >= (13, 0)
+
+    if supported:
         return True, ""
-    return False, "Device compute capability 10.0 or higher required for MXFP8 execution."
+
+    cublas_version = tex.get_cublasLt_version()
+    cuda_version = _runtime_cuda_version()
+    reason = (
+        "MXFP8 (all GEMM layouts) on SM 12.x GPUs requires CUDA 12.8+ and cuBLASLt 12.8+."
+        f" Detected cuBLASLt {_format_cublas_version(cublas_version)} and CUDA {cuda_version}."
+    )
+    return False, reason
 
 
 @functools.lru_cache(maxsize=None)
 def check_nvfp4_support() -> Tuple[bool, str]:
     """Return if nvfp4 support is available"""
-    if get_device_compute_capability() >= (10, 0):  # blackwell and above
+    device_cc = get_device_compute_capability()
+    if device_cc < (10, 0):
+        return False, "Device compute capability 10.0 or higher required for NVFP4 execution."
+
+    try:
+        import transformer_engine.pytorch.cpp_extensions as ext
+
+        supported = bool(ext.is_nvfp4_supported())
+    except (ImportError, AttributeError):
+        supported = device_cc >= (10, 0)
+
+    if supported:
         return True, ""
-    return False, "Device compute capability 10.0 or higher required for NVFP4 execution."
+
+    cublas_version = tex.get_cublasLt_version()
+    cuda_version = _runtime_cuda_version()
+    reason = (
+        "NVFP4 execution on SM 12.x GPUs requires CUDA 12.8+ and cuBLASLt 12.8+."
+        f" Detected cuBLASLt {_format_cublas_version(cublas_version)} and CUDA {cuda_version}."
+    )
+    return False, reason
 
 
 @functools.lru_cache(maxsize=None)

@@ -6,6 +6,8 @@
 
 #include <transformer_engine/transformer_engine.h>
 
+#include <cublasLt.h>
+
 #include <atomic>
 #include <climits>
 #include <cstring>
@@ -717,11 +719,61 @@ void nvte_destroy_quantization_config(NVTEQuantizationConfig config) {
 }
 
 int nvte_is_non_tn_fp8_gemm_supported() {
-  int deviceComputeCapability =
+  const int deviceComputeCapability =
       transformer_engine::cuda::sm_arch(transformer_engine::cuda::current_device());
 
-  // Note: this is temporary restriction and should be lifted in the future.
-  // (remove the note once it's done.)
-  return (deviceComputeCapability >= 100 && deviceComputeCapability < 120) ||
-         deviceComputeCapability >= 130;
+  constexpr size_t kRequiredCublasLtVersion = 120800;
+  constexpr int kRequiredCudaRuntimeVersion = 12080;
+
+  auto is_runtime_ready = []() {
+    return transformer_engine::cuda::cudart_version() >= kRequiredCudaRuntimeVersion;
+  };
+  auto cublas_version = []() {
+    static const size_t version = cublasLtGetVersion();
+    return version;
+  };
+
+  if (deviceComputeCapability >= 130) {
+    return 1;
+  }
+  if (deviceComputeCapability >= 100 && deviceComputeCapability < 120) {
+    return 1;
+  }
+  if (deviceComputeCapability >= 120 && deviceComputeCapability < 130) {
+    if (!is_runtime_ready() || cublas_version() < kRequiredCublasLtVersion) {
+      return 0;
+    }
+    return 1;
+  }
+  return 0;
+}
+
+int nvte_is_nvfp4_supported() {
+  const int deviceComputeCapability =
+      transformer_engine::cuda::sm_arch(transformer_engine::cuda::current_device());
+
+  constexpr size_t kRequiredCublasLtVersion = 120800;
+  constexpr int kRequiredCudaRuntimeVersion = 12080;
+
+  auto is_runtime_ready = []() {
+    return transformer_engine::cuda::cudart_version() >= kRequiredCudaRuntimeVersion;
+  };
+  auto cublas_version = []() {
+    static const size_t version = cublasLtGetVersion();
+    return version;
+  };
+
+  if (deviceComputeCapability >= 130) {
+    return 1;
+  }
+  if (deviceComputeCapability >= 100 && deviceComputeCapability < 120) {
+    return 1;
+  }
+  if (deviceComputeCapability >= 120 && deviceComputeCapability < 130) {
+    if (!is_runtime_ready() || cublas_version() < kRequiredCublasLtVersion) {
+      return 0;
+    }
+    return 1;
+  }
+  return 0;
 }
