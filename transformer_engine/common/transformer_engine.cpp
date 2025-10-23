@@ -21,6 +21,14 @@
 
 namespace transformer_engine {
 
+TensorWrapper &TensorWrapper::set_block_size(uint32_t block_size) noexcept {
+  Tensor *tensor = convertNVTETensor(tensor_);
+  if (tensor != nullptr) {
+    tensor->block_size = block_size;
+  }
+  return *this;
+}
+
 size_t typeToNumBits(const DType type) {
   TRANSFORMER_ENGINE_TYPE_SWITCH_ALL(type, T,
                                      return TypeInfo<T>::size;);  // NOLINT(*)
@@ -106,7 +114,7 @@ void CheckScaleTensorShape(const Tensor &t, const std::string &name) {
       auto block_alignment = std::vector<size_t>{128ul, 4ul};
       size_t expected_x, expected_y, alignment;
       const size_t block_size_rowwise =
-          t->block_size != 0 ? static_cast<size_t>(t->block_size) : 32;
+          t.block_size != 0 ? static_cast<size_t>(t.block_size) : 32;
       const size_t block_size_colwise = block_size_rowwise;
 
       if (t.has_data()) {
@@ -137,7 +145,7 @@ void CheckScaleTensorShape(const Tensor &t, const std::string &name) {
                    t.columnwise_scale_inv.shape, ")");
       }
     } else if (t.scaling_mode == NVTE_NVFP4_1D_SCALING) {
-      const size_t block_size = t->block_size != 0 ? static_cast<size_t>(t->block_size) : 16;
+      const size_t block_size = t.block_size != 0 ? static_cast<size_t>(t.block_size) : 16;
       if (t.has_data()) {
         const size_t expected_y = DIVUP_TO_MULTIPLE(t.flat_first_dim(), 128);
         const size_t expected_x = DIVUP_TO_MULTIPLE(DIVUP(t.flat_last_dim(), block_size), 4);

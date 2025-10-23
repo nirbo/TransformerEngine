@@ -1,4 +1,15 @@
-Record NVFP4 templating progress in statefile
+Title: Guard SM120 builds on missing Blackwell intrinsics
 
-- note that NVFP4 transpose kernels now template on block size metadata and swizzle paths consume inferred sizes
-- update remaining CUDA to-do items to focus on SM120 inline assembly and validation sequencing
+Summary:
+- add explicit <stdint.h> include + forward decls in transformer_engine.h to unblock
+  TensorWrapper::set_block_size out-of-line definition
+- move TensorWrapper::set_block_size implementation into
+  transformer_engine/common/transformer_engine.cpp and fix block_size accesses
+- wrap Blackwell-only cuBLAS compute enums behind preprocessor guards to fall
+  back to CUBLAS_COMPUTE_32F when headers are older than CUDA 13
+- prevent sm_120 toolchains from taking Hopper inline PTX path until the new
+  instructions assemble
+
+Testing:
+- source venv/bin/activate
+- pip install --no-build-isolation .

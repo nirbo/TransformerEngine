@@ -127,9 +127,9 @@ __device__ __forceinline__ float exp2f(e8m0_t biased_exp) {
 #define CUDA_ARCH_HAS_FEATURE_SM12X 0
 #endif
 
-#define CUDA_ARCH_HAS_FEATURE_SM10X_ALL                                                \
-  ((__CUDA_ARCH_HAS_FEATURE__(SM100_ALL)) || (__CUDA_ARCH_HAS_FEATURE__(SM101_ALL)) || \
-   (__CUDA_ARCH_HAS_FEATURE__(SM103_ALL)) || CUDA_ARCH_HAS_FEATURE_SM12X)
+#define CUDA_ARCH_HAS_FEATURE_SM10X_ALL                                                 \
+  (((__CUDA_ARCH_HAS_FEATURE__(SM100_ALL)) || (__CUDA_ARCH_HAS_FEATURE__(SM101_ALL)) || \
+    (__CUDA_ARCH_HAS_FEATURE__(SM103_ALL))) && !CUDA_ARCH_HAS_FEATURE_SM12X)
 
 __device__ __forceinline__ e8m0_t float_to_e8m0(float val) {
 #if CUDA_ARCH_HAS_FEATURE_SM10X_ALL

@@ -13,6 +13,7 @@
 
 #include <cuda_runtime_api.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -413,6 +414,10 @@ void nvte_memset(void *ptr, int value, size_t size_in_bytes, cudaStream_t stream
  */
 namespace transformer_engine {
 
+struct Tensor;
+Tensor *convertNVTETensor(const NVTETensor tensor);
+Tensor *convertNVTETensorCheck(const NVTETensor tensor);
+
 /*! \enum DType
  *  \brief TE datatype.
  */
@@ -591,13 +596,7 @@ class TensorWrapper {
     return set_parameter(kNVTEColumnwiseScaleInv, dptr, type, shape);
   }
 
-  TensorWrapper &set_block_size(uint32_t block_size) noexcept {
-    auto *tensor = transformer_engine::convertNVTETensor(tensor_);
-    if (tensor != nullptr) {
-      tensor->block_size = block_size;
-    }
-    return *this;
-  }
+  TensorWrapper &set_block_size(uint32_t block_size) noexcept;
 
   template <typename ShapeType>
   TensorWrapper &set_columnwise_amax(void *dptr, DType type, const ShapeType &shape) noexcept {

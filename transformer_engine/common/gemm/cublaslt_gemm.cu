@@ -520,9 +520,17 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
   const bool is_blackwell = (device_cc >= 120 && device_cc < 130);
   if (is_blackwell) {
     if (use_fp8) {
+#ifdef CUBLAS_COMPUTE_32F_FAST_FP8XMMA
       gemm_compute_type = CUBLAS_COMPUTE_32F_FAST_FP8XMMA;
+#else
+      gemm_compute_type = CUBLAS_COMPUTE_32F;
+#endif
     } else if (use_fp4) {
+#ifdef CUBLAS_COMPUTE_32F_FAST_FP4XMMA
       gemm_compute_type = CUBLAS_COMPUTE_32F_FAST_FP4XMMA;
+#else
+      gemm_compute_type = CUBLAS_COMPUTE_32F;
+#endif
     }
   }
 
