@@ -1,15 +1,10 @@
-Title: Export TensorWrapper setter and expose MXFP8 dtype in PyTorch API
+Title: Make distributed cast test compatible with pytest 8
 
 Summary:
-- load libtransformer_engine with RTLD_GLOBAL before importing Torch bindings
-  to resolve C++ symbols when running from source installs
-- whitelist transformer_engine::TensorWrapper::set_block_size in the version
-  script and keep its definition with default visibility
-- expose DType.kFloat8E8M0 to the Python extension so MXFP8 tensors can set
-  their scale dtype without import errors
+- use allow_module_level=True for the GPU-count skip in
+  tests/pytorch/distributed/test_cast_master_weights_to_fp8.py so pytest 8
+  treats the module-level guard correctly
 
 Testing:
-- source venv/bin/activate && NVTE_FRAMEWORK=pytorch MAX_JOBS=30 \
-  NVTE_BUILD_THREADS_PER_JOB=1 pip install --no-build-isolation .
 - source venv/bin/activate && python -m pytest \
   tests/pytorch/distributed/test_cast_master_weights_to_fp8.py -k mxfp8 --maxfail=1

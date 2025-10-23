@@ -17,7 +17,7 @@ from transformer_engine.pytorch import (
 
 
 if torch.cuda.device_count() < 2:
-    pytest.skip("cast_master_weights_to_fp8 test needs at least 2 GPUs.")
+    pytest.skip("cast_master_weights_to_fp8 test needs at least 2 GPUs.", allow_module_level=True)
 
 fp8_available, reason_for_no_fp8 = is_fp8_available(return_reason=True)
 fp8_block_scaling_available, reason_for_no_fp8_block_scaling = is_fp8_block_scaling_available(
