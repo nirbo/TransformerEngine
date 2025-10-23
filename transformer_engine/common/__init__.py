@@ -130,6 +130,18 @@ def _get_shared_object_file(library: str) -> Path:
     )
 
 
+@functools.lru_cache(maxsize=None)
+def _load_core_shared_object() -> None:
+    """Ensure libtransformer_engine is resident with globally visible symbols."""
+
+    core_so = _get_shared_object_file("core")
+    load_mode = getattr(ctypes, "RTLD_GLOBAL", None)
+    if load_mode is not None:
+        ctypes.CDLL(str(core_so), mode=load_mode)
+    else:
+        ctypes.CDLL(str(core_so))
+
+
 def get_te_core_package_info() -> Tuple[bool, str, str]:
     """
     Check if Tranformer Engine core package is installed.
@@ -184,6 +196,9 @@ def load_framework_extension(framework: str) -> None:
             f" v{te_core_version}. Install transformer-engine using "
             f"'pip3 install --no-build-isolation transformer-engine[{extra_dep_name}]==VERSION'"
         )
+
+    # Ensure the core shared object is loaded so dependent symbols resolve.
+    _load_core_shared_object()
 
     # After all checks are completed, load the shared object file.
     spec = importlib.util.spec_from_file_location(module_name, _get_shared_object_file(framework))

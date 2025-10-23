@@ -1,13 +1,16 @@
-Title: Centralize MXFP8/NVFP4 block-size resolution
+Title: Export TensorWrapper::set_block_size and preload core library
 
 Summary:
-- add transformer_engine/common/util/cast_kernels.cuh helper to merge
-  QuantizationConfig overrides with tensor metadata when selecting block
-  sizes for MXFP8/NVFP4 quantize paths
-- update mxfp8/nvfp4 quantize entry points and the runtime dispatcher to use
-  the shared helper so SM120 metadata stays consistent
-- note the change in llm.state and quants-dev.md under the outstanding-kernel
-  work section
+- load libtransformer_engine.so with RTLD_GLOBAL before importing the Torch
+  extension so C++ symbols resolve when using source installs
+- expose transformer_engine::TensorWrapper::set_block_size via the version
+  script so python bindings link cleanly
+- rebuilt the wheel in the local venv; noted pytest distributed cast test
+  still fails to import because transformer_engine_torch.DType lacks
+  kFloat8E8M0 (extension rebuild follow-up)
 
 Testing:
-- not run (header-only refactor; requires multi-GPU CUDA environment)
+- source venv/bin/activate && NVTE_FRAMEWORK=pytorch MAX_JOBS=30 \
+  NVTE_BUILD_THREADS_PER_JOB=1 pip install --no-build-isolation .
+- source venv/bin/activate && python -m pytest \
+  tests/pytorch/distributed/test_cast_master_weights_to_fp8.py -k mxfp8 --maxfail=1

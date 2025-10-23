@@ -21,13 +21,21 @@
 
 namespace transformer_engine {
 
-TensorWrapper &TensorWrapper::set_block_size(uint32_t block_size) noexcept {
+#if defined(_MSC_VER)
+#define TE_EXPORT __declspec(dllexport)
+#else
+#define TE_EXPORT __attribute__((visibility("default")))
+#endif
+
+TE_EXPORT TensorWrapper &TensorWrapper::set_block_size(uint32_t block_size) noexcept {
   Tensor *tensor = convertNVTETensor(tensor_);
   if (tensor != nullptr) {
     tensor->block_size = block_size;
   }
   return *this;
 }
+
+#undef TE_EXPORT
 
 size_t typeToNumBits(const DType type) {
   TRANSFORMER_ENGINE_TYPE_SWITCH_ALL(type, T,
