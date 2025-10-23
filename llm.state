@@ -29,6 +29,7 @@
 - NVFP4/MXFP8 quantizers now surface their block-size setting so storage constructors and shape checks reuse the runtime metadata rather than hard-coded constants.
 - Parameterized MXFP8 quantization kernels/launchers on compile-time block size template arguments so SM120 recipes rely on tensor metadata instead of literal 32-element assumptions.
 - Reworked MXFP8/NVFP4 dequantization entry points into templated helpers that dispatch based on tensor metadata while validating supported tilings.
+- MXFP8/NVFP4 quantize entry points now share a helper that resolves QuantizationConfig overrides with tensor metadata, ensuring consistent block-size validation on SM120.
 - Tensor wrappers now propagate block-size metadata from Python quantizers, ensuring newly created MXFP8/NVFP4 tensors immediately expose their configured tiling to the C++ runtime.
 - `cast_master_weights_to_fp8` now reconstructs MXFP8/NVFP4 master weights under FSDP/ZeRO via all-reduce so sharded optimizers can update the quantized replicas without falling back to BF16.
 - Distributed ZeRO/FSDP regression harness (`tests/pytorch/distributed/run_cast_master_weights_to_fp8.py`) now exercises MXFP8 and NVFP4 tensor types in addition to existing FP8 modes.

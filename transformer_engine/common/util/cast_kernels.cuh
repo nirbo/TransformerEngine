@@ -29,6 +29,32 @@
 
 namespace transformer_engine {
 
+namespace detail {
+
+template <size_t RequiredBlockSize>
+inline uint32_t ResolveBlockSize(const QuantizationConfig *runtime_config,
+                                 uint32_t metadata_block_size,
+                                 uint32_t fallback_block_size,
+                                 const char *context) {
+  uint32_t resolved = 0;
+  if (runtime_config != nullptr && runtime_config->block_size != 0) {
+    resolved = runtime_config->block_size;
+  } else if (metadata_block_size != 0) {
+    resolved = metadata_block_size;
+  } else if (fallback_block_size != 0) {
+    resolved = fallback_block_size;
+  }
+  if (resolved == 0) {
+    resolved = static_cast<uint32_t>(RequiredBlockSize);
+  }
+  NVTE_CHECK(resolved == RequiredBlockSize, context, " requires block_size=",
+             static_cast<uint32_t>(RequiredBlockSize),
+             ", but received block_size=", resolved, ".");
+  return resolved;
+}
+
+}  // namespace detail
+
 namespace mxfp8_kernel {
 
 constexpr size_t BUFFS_NUM = 2;
@@ -1729,11 +1755,10 @@ void mxfp8_quantize(const Tensor &input, const Tensor *act_input,
                     const Tensor *noop,  // TODO (ksivamani)
                     Tensor *output, Tensor *dbias, Tensor *workspace,
                     const QuantizationConfig *quant_config, cudaStream_t stream) {
-  const size_t requested_block_size =
-      (quant_config != nullptr && quant_config->block_size != 0) ? quant_config->block_size : 0;
-  constexpr size_t kDefaultBlockSize = 32;
-  const size_t resolved_block_size =
-      (requested_block_size != 0) ? requested_block_size : kDefaultBlockSize;
+  const uint32_t current_metadata = output->block_size;
+  const uint32_t resolved_block_size = detail::ResolveBlockSize<32>(
+      quant_config, current_metadata, 32u, "MXFP8 quantization");
+  output->block_size = resolved_block_size;
 
   switch (resolved_block_size) {
     case 32:
@@ -1891,14 +1916,12 @@ void nvfp4_quantize_impl(const Tensor &input, const Tensor *noop, Tensor *output
 template <bool COMPUTE_ACTIVATIONS, typename ParamOP, float (*OP)(float, const ParamOP &)>
 void nvfp4_quantize(const Tensor &input, const Tensor *noop, Tensor *output,
                     const QuantizationConfig *quant_config, cudaStream_t stream) {
-  const size_t requested_block_size =
-      (quant_config != nullptr && quant_config->block_size != 0) ? quant_config->block_size : 0;
   constexpr size_t kDefaultBlockSize = 16;
-  const size_t resolved_block_size =
-      (requested_block_size != 0) ? requested_block_size : kDefaultBlockSize;
-  NVTE_CHECK(resolved_block_size == kDefaultBlockSize,
-             "NVFP4 requires block_size=16, but QuantizationConfig requested ",
-             resolved_block_size, ".");
+  const uint32_t current_metadata = output->block_size;
+  const uint32_t resolved_block_size = detail::ResolveBlockSize<kDefaultBlockSize>(
+      quant_config, current_metadata, static_cast<uint32_t>(kDefaultBlockSize),
+      "NVFP4 quantization");
+  output->block_size = resolved_block_size;
 
   nvfp4_quantize_impl<kDefaultBlockSize, COMPUTE_ACTIVATIONS, ParamOP, OP>(
       input, noop, output, quant_config, stream);
@@ -2117,30 +2140,18 @@ void quantize_helper(const NVTETensor input, const NVTETensor grad, NVTETensor o
     quant_config_cpp = *reinterpret_cast<QuantizationConfig *>(quant_config);
   }
 
-  uint32_t config_block_size = 0;
-  if (quant_config != nullptr) {
-    config_block_size = quant_config_cpp.block_size;
-  }
   const bool output_is_mxfp8 = output_tensor->scaling_mode == NVTE_MXFP8_1D_SCALING;
   const bool output_is_nvfp4 = output_tensor->scaling_mode == NVTE_NVFP4_1D_SCALING;
-  const uint32_t fallback_block_size =
-      output_is_mxfp8 ? 32u : (output_is_nvfp4 ? 16u : 0u);
-  if (config_block_size != 0) {
-    if (output_is_mxfp8) {
-      NVTE_CHECK(config_block_size == 32u,
-                 "MXFP8 quantization currently requires block_size=32, but got ",
-                 config_block_size, ".");
-    } else if (output_is_nvfp4) {
-      NVTE_CHECK(config_block_size == 16u,
-                 "NVFP4 quantization currently requires block_size=16, but got ",
-                 config_block_size, ".");
-    }
-  }
-  if (config_block_size == 0) {
-    config_block_size = fallback_block_size;
-  }
-  if (config_block_size != 0) {
-    output_tensor->block_size = config_block_size;
+  const QuantizationConfig *quant_config_ptr =
+      quant_config != nullptr ? &quant_config_cpp : nullptr;
+  if (output_is_mxfp8) {
+    const uint32_t resolved = detail::ResolveBlockSize<32>(
+        quant_config_ptr, output_tensor->block_size, 32u, "MXFP8 quantization");
+    output_tensor->block_size = resolved;
+  } else if (output_is_nvfp4) {
+    const uint32_t resolved = detail::ResolveBlockSize<16>(
+        quant_config_ptr, output_tensor->block_size, 16u, "NVFP4 quantization");
+    output_tensor->block_size = resolved;
   }
 
   // Noop flag

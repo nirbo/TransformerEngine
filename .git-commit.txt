@@ -1,15 +1,13 @@
-Title: Cover MXFP8/NVFP4 quantization in distributed regression suite
+Title: Centralize MXFP8/NVFP4 block-size resolution
 
 Summary:
-- extend tests/pytorch/distributed/run_cast_master_weights_to_fp8.py to accept
-  MXFP8BlockScaling and NVFP4BlockScaling recipes, expose raw uint8 buffers for
-  MXFP8/NVFP4 tensors, and allow CLI selection of the new modes
-- gate pytest launcher on is_mxfp8_available/is_nvfp4_available so the new
-  modes are scheduled only when supported (and skip otherwise)
-- refresh llm.state and quants-dev.md to record the expanded test coverage
+- add transformer_engine/common/util/cast_kernels.cuh helper to merge
+  QuantizationConfig overrides with tensor metadata when selecting block
+  sizes for MXFP8/NVFP4 quantize paths
+- update mxfp8/nvfp4 quantize entry points and the runtime dispatcher to use
+  the shared helper so SM120 metadata stays consistent
+- note the change in llm.state and quants-dev.md under the outstanding-kernel
+  work section
 
 Testing:
-- source venv/bin/activate
-- MAX_JOBS=30 NVTE_BUILD_THREADS_PER_JOB=1 NVTE_FRAMEWORK=pytorch \
-  python -m pytest tests/pytorch/distributed/test_cast_master_weights_to_fp8.py \
-  -k 'nvfp4 or mxfp8' --maxfail=1
+- not run (header-only refactor; requires multi-GPU CUDA environment)

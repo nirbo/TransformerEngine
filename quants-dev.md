@@ -51,7 +51,8 @@
    - ✅ Ensure `QuantizationConfigWrapper` in PyTorch populates these knobs when constructing MXFP8 or NVFP4 recipes. (JAX pending)
 
 2. **MXFP8 kernels (`common/util/cast_kernels.cuh`, `cast_gated_kernels.cuh`, `dequantize_kernels.cuh`)**
-   - Generalise load/store loops to allow alternative block lengths where needed; keep warp scheduling correct for SM120’s wider shared-memory banks.
+ - Generalise load/store loops to allow alternative block lengths where needed; keep warp scheduling correct for SM120’s wider shared-memory banks.
+  - ✅ Centralized block-size resolution/validation in `cast_kernels.cuh` so MXFP8/NVFP4 quantize paths honour tensor metadata and QuantizationConfig overrides consistently.
    - Use the SM120 inline assembly paths for E8M0 conversion; maintain portable fallback for older GPUs.
    - Confirm the TMA descriptors used for CP async copies encode the 32-element MXFP8 tiles correctly for SM120 caching behaviour.
 
