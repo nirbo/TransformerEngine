@@ -19,12 +19,16 @@ from transformer_engine.common.recipe import (
     Float8BlockScaling,
     Format,
     Recipe,
+    MXFP8BlockScaling,
+    NVFP4BlockScaling,
 )
 import transformer_engine.pytorch as te
 from transformer_engine.pytorch import (
     QuantizedTensor,
     Float8Tensor,
     Float8BlockwiseQTensor,
+    MXFP8Tensor,
+    NVFP4Tensor,
 )
 from transformer_engine.pytorch.tensor import cast_master_weights_to_fp8
 from transformer_engine.pytorch.tensor.utils import post_all_gather_processing, replace_raw_data
@@ -40,9 +44,24 @@ def _get_raw_data(quantized_tensor):
         assert hasattr(
             quantized_tensor, "_rowwise_data"
         ), "Float8BlockwiseQTensor does not have _rowwise_data attribute"
+        assert quantized_tensor._rowwise_data is not None, "Float8BlockwiseQTensor missing data"
         assert (
             quantized_tensor._rowwise_data.dtype == torch.uint8
         ), "Float8BlockwiseQTensor _rowwise_data must be uint8"
+        return quantized_tensor._rowwise_data
+    elif isinstance(quantized_tensor, MXFP8Tensor):
+        assert hasattr(quantized_tensor, "_rowwise_data"), "MXFP8Tensor missing _rowwise_data"
+        assert quantized_tensor._rowwise_data is not None, "MXFP8Tensor missing data"
+        assert (
+            quantized_tensor._rowwise_data.dtype == torch.uint8
+        ), "MXFP8Tensor _rowwise_data must be uint8"
+        return quantized_tensor._rowwise_data
+    elif isinstance(quantized_tensor, NVFP4Tensor):
+        assert hasattr(quantized_tensor, "_rowwise_data"), "NVFP4Tensor missing _rowwise_data"
+        assert quantized_tensor._rowwise_data is not None, "NVFP4Tensor missing data"
+        assert (
+            quantized_tensor._rowwise_data.dtype == torch.uint8
+        ), "NVFP4Tensor _rowwise_data must be uint8"
         return quantized_tensor._rowwise_data
     else:
         raise ValueError(f"Unsupported quantized tensor type: {type(quantized_tensor)}")
@@ -562,6 +581,10 @@ def quantization_recipe(quantization) -> Recipe:
         return Float8CurrentScaling(fp8_format=fp8_format)
     elif quantization == "fp8_block":
         return Float8BlockScaling(fp8_format=fp8_format)
+    elif quantization == "mxfp8":
+        return MXFP8BlockScaling(fp8_format=fp8_format)
+    elif quantization == "nvfp4":
+        return NVFP4BlockScaling(fp8_format=fp8_format)
     else:
         raise ValueError(f"Unsupported quantization: {quantization}")
 
@@ -672,7 +695,10 @@ def main(argv=None, namespace=None):
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--quantization", type=str, default=None, choices=["fp8", "fp8_cs", "fp8_block"]
+        "--quantization",
+        type=str,
+        default=None,
+        choices=["fp8", "fp8_cs", "fp8_block", "mxfp8", "nvfp4"],
     )
     args = parser.parse_args(argv, namespace)
 

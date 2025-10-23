@@ -1,15 +1,15 @@
-Title: Guard SM120 builds on missing Blackwell intrinsics
+Title: Cover MXFP8/NVFP4 quantization in distributed regression suite
 
 Summary:
-- add explicit <stdint.h> include + forward decls in transformer_engine.h to unblock
-  TensorWrapper::set_block_size out-of-line definition
-- move TensorWrapper::set_block_size implementation into
-  transformer_engine/common/transformer_engine.cpp and fix block_size accesses
-- wrap Blackwell-only cuBLAS compute enums behind preprocessor guards to fall
-  back to CUBLAS_COMPUTE_32F when headers are older than CUDA 13
-- prevent sm_120 toolchains from taking Hopper inline PTX path until the new
-  instructions assemble
+- extend tests/pytorch/distributed/run_cast_master_weights_to_fp8.py to accept
+  MXFP8BlockScaling and NVFP4BlockScaling recipes, expose raw uint8 buffers for
+  MXFP8/NVFP4 tensors, and allow CLI selection of the new modes
+- gate pytest launcher on is_mxfp8_available/is_nvfp4_available so the new
+  modes are scheduled only when supported (and skip otherwise)
+- refresh llm.state and quants-dev.md to record the expanded test coverage
 
 Testing:
 - source venv/bin/activate
-- pip install --no-build-isolation .
+- MAX_JOBS=30 NVTE_BUILD_THREADS_PER_JOB=1 NVTE_FRAMEWORK=pytorch \
+  python -m pytest tests/pytorch/distributed/test_cast_master_weights_to_fp8.py \
+  -k 'nvfp4 or mxfp8' --maxfail=1

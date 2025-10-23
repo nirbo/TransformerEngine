@@ -31,6 +31,7 @@
 - Reworked MXFP8/NVFP4 dequantization entry points into templated helpers that dispatch based on tensor metadata while validating supported tilings.
 - Tensor wrappers now propagate block-size metadata from Python quantizers, ensuring newly created MXFP8/NVFP4 tensors immediately expose their configured tiling to the C++ runtime.
 - `cast_master_weights_to_fp8` now reconstructs MXFP8/NVFP4 master weights under FSDP/ZeRO via all-reduce so sharded optimizers can update the quantized replicas without falling back to BF16.
+- Distributed ZeRO/FSDP regression harness (`tests/pytorch/distributed/run_cast_master_weights_to_fp8.py`) now exercises MXFP8 and NVFP4 tensor types in addition to existing FP8 modes.
 
 ## Tool Usage Log
 - `sed`, `rg`, and `python` one-off scripts used for targeted inspections (no persistent side effects).
@@ -45,7 +46,7 @@
    - Remove legacy BF16 fallbacks in higher-level modules once runtime probes succeed.
    - Update distributed collectives to honor MXFP8/NVFP4 metadata; ensure scale tensors exchange correctly.
 3. **Validation & Testing**
-   - Add SM120-focused unit/integration tests: GEMM smoke tests, kernel correctness, distributed flows.
+   - Add SM120-focused unit/integration tests covering GEMM smoke paths, kernel correctness, and attention kernels (distributed cast-master-weights test now covers MXFP8/NVFP4 flows).
    - Confirm existing suites run cleanly with new metadata paths.
 4. **Documentation & Release Prep**
    - Expand user-facing docs/examples describing SM120 requirements and configuration.

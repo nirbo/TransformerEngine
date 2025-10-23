@@ -80,8 +80,8 @@
 - Extend existing CUDA unit tests:
   - `tests/cpp/operator/test_cast_nvfp4_transpose.cu` and friends to run against SM120, validating both 1D & 2D quantisation modes.
   - Add GEMM smoke tests that exercise each transpose layout for MXFP8/NVFP4 with real cuBLASLt calls.
-- Add PyTorch integration tests that perform forward/backward and optimizer steps in MXFP8 and NVFP4 modes on SM120.
-- Include distributed tests (all-gather, reduce-scatter) to confirm scale metadata is exchanged correctly.
+- ✅ Add PyTorch integration tests that perform forward/backward and optimizer steps in MXFP8 and NVFP4 modes on SM120 (`tests/pytorch/distributed/run_cast_master_weights_to_fp8.py`).
+- ✅ Include distributed tests (all-gather, reduce-scatter) to confirm scale metadata is exchanged correctly for MXFP8/NVFP4 master-weight casting.
 - For JAX, add reference comparisons vs FP16/BF16 pipelines.
 
 ## 8. Documentation & Messaging
